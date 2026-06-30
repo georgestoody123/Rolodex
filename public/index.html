@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Network Emailer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f4f2;
+    --surface: #ffffff;
+    --surface-2: #f9f9f8;
+    --border: rgba(0,0,0,0.09);
+    --border-strong: rgba(0,0,0,0.15);
+    --text: #181816;
+    --text-muted: #888;
+    --text-secondary: #555;
+    --accent: #2563eb;
+    --accent-bg: #eff6ff;
+    --accent-border: #bfdbfe;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --success-border: #bbf7d0;
+    --warning: #b45309;
+    --warning-bg: #fffbeb;
+    --danger: #dc2626;
+    --danger-bg: #fef2f2;
+    --radius: 8px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Layout ── */
+  .app { max-width: 980px; margin: 0 auto; padding: 1.5rem; }
+
+  /* ── Header ── */
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+  .logo { width: 38px; height: 38px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; flex-shrink: 0; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header p { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+  .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+  /* ── Buttons ── */
+  .btn { padding: 8px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-family: inherit; transition: background 0.1s, opacity 0.1s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { background: var(--bg); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-sm { padding: 5px 11px; font-size: 12px; }
+  .filter-chip.chip-active { background: var(--accent); color: #fff; border-color: transparent; }
+  .reason-chip { display: inline-block; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 20px; margin: 2px 2px 0 0; white-space: nowrap; }
+  .reason-coffee { background: var(--warning-bg); color: var(--warning); border: 1px solid #fde68a; }
+  .reason-biz { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
+  .reason-work { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .reason-freq { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border-strong); }
+  .collapse-section { border-bottom: 1px solid var(--border); }
+  .collapse-section:last-child { border-bottom: none; }
+  .collapse-header { width: 100%; text-align: left; background: transparent; border: none; cursor: pointer; font-family: inherit;
+    font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 10px 2px; display: flex; align-items: center; gap: 7px; }
+  .collapse-header:hover { color: var(--text-secondary); }
+  .collapse-caret { display: inline-block; transition: transform 0.18s ease; font-size: 10px; }
+  .collapse-header.collapsed .collapse-caret { transform: rotate(-90deg); }
+  .collapse-body { padding: 0 2px 12px; overflow: hidden; }
+  .collapse-body.hidden { display: none; }
+  .group-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-2); border-top: 1px solid var(--border); }
+  .group-toggle { flex: 1; display: flex; align-items: center; gap: 8px; background: transparent; border: none; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text); text-align: left; padding: 2px; }
+  .group-toggle:hover { color: var(--accent); }
+  .group-toggle .collapse-caret { transition: transform 0.18s ease; font-size: 10px; color: var(--text-muted); }
+  .group-toggle .collapse-caret.rot { transform: rotate(-90deg); }
+  .group-name { font-weight: 600; }
+  .group-count { font-size: 11px; font-weight: 600; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; }
+  .group-selected { font-size: 11px; font-weight: 500; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: 20px; padding: 1px 8px; }
+  .group-select-btn { white-space: nowrap; }
+  .btn-ghost { border-color: transparent; background: transparent; }
+  .btn-ghost:hover { background: var(--bg); }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+
+  /* ── Upload zone ── */
+  .upload-zone { border: 2px dashed var(--border-strong); border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: var(--accent-bg); }
+  .upload-icon { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; }
+  .upload-zone h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .upload-zone p { font-size: 13px; color: var(--text-muted); margin-bottom: 1rem; }
+  .upload-zone input[type="file"] { display: none; }
+
+  /* ── Template hint ── */
+  .template-hint { background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--accent); display: flex; align-items: flex-start; gap: 8px; margin-top: 1rem; text-align: left; }
+
+  /* ── Progress bar ── */
+  .progress-wrap { margin: 1.5rem 0; }
+  .progress-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .progress-bar { height: 6px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.4s ease; }
+
+  /* ── Contact queue table ── */
+  .queue-header { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; }
+  .queue-header h2 { font-size: 15px; font-weight: 600; }
+  .count-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
+  .count-pill.done { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+
+  .contact-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .contact-table th { text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .contact-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .contact-table tr:last-child td { border-bottom: none; }
+  .contact-table tr:hover td { background: var(--surface-2); }
+
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .name-cell { display: flex; align-items: center; gap: 8px; }
+  .name-cell .name { font-weight: 500; }
+  .name-cell .email-sub { font-size: 11px; color: var(--text-muted); }
+
+  .status-badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; display: inline-block; white-space: nowrap; }
+  .status-pending { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border-strong); }
+  .status-writing { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
+  .status-done { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .status-error { background: var(--danger-bg); color: var(--danger); border: 1px solid #fecaca; }
+
+  .spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; opacity: 0.6; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Email preview drawer ── */
+  .drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; display: flex; justify-content: flex-end; }
+  .drawer { width: 540px; max-width: 94vw; background: var(--surface); height: 100vh; display: flex; flex-direction: column; box-shadow: -4px 0 24px rgba(0,0,0,0.1); }
+  .drawer-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .drawer-header h3 { font-size: 15px; font-weight: 600; flex: 1; }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+  .drawer-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+  .field-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; display: block; }
+  input[type="text"], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 14px;
+  }
+  input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+  textarea { line-height: 1.6; resize: vertical; }
+
+  .news-chip { font-size: 11px; background: var(--warning-bg); color: var(--warning); border: 1px solid #fde68a; padding: 3px 8px; border-radius: 20px; display: inline-block; margin: 2px; }
+
+  /* ── Settings modal ── */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; width: 440px; max-width: 94vw; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 1.25rem; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+
+  /* ── Empty / info states ── */
+  .empty { text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
+  .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .info-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .header p { display: none; }
+    .contact-table th:nth-child(3), .contact-table td:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">✉</div>
+    <div>
+      <h1>Network Emailer</h1>
+      <p>Upload contacts → AI writes personalized emails automatically</p>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Settings</button>
+      <button class="btn btn-sm" onclick="downloadTemplate()">⬇ Excel template</button>
+    </div>
+  </div>
+
+  <!-- Upload section -->
+  <div id="upload-section">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+
+      <!-- Path A: Excel -->
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="handleDrop(event)" style="padding:2rem 1.5rem;">
+        <span class="upload-icon">📊</span>
+        <h2>Upload a contacts spreadsheet</h2>
+        <p>Excel (.xlsx) or CSV with your contacts</p>
+        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose spreadsheet</button>
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])" />
+      </div>
+
+      <!-- Path B: Build from email -->
+      <div class="upload-zone" id="mbox-drop-zone" onclick="document.getElementById('mbox-input').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="handleMboxDrop(event)" style="padding:2rem 1.5rem;">
+        <span class="upload-icon">📧</span>
+        <h2>Build from your sent email</h2>
+        <p>Upload a Google Takeout .zip or .mbox of sent mail</p>
+        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('mbox-input').click()">Choose email export</button>
+        <input type="file" id="mbox-input" accept=".zip,.mbox" onchange="handleMboxFile(this.files[0])" />
+      </div>
+    </div>
+
+    <div class="template-hint" style="max-width:none;">
+      <span>💡</span>
+      <span><strong>Spreadsheet option:</strong> needs columns First Name, Last Name, Company, Position, Industry, Group, Connection, Notes (click "Excel template" above for a starter file). &nbsp; <strong>Email option:</strong> in Google Takeout, export Gmail, which gives a .zip containing a "Sent.mbox" file. Drop that whole .zip here. Everything is read on your computer, nothing is uploaded.</span>
+    </div>
+
+    <div id="mbox-progress" style="display:none;margin-top:1rem;" class="card">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="spinner" style="color:var(--accent);"></div>
+        <div style="font-size:13px;color:var(--text-secondary);" id="mbox-progress-text">Reading your email export…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email-derived contacts review section -->
+  <div id="mbox-review-section" style="display:none;">
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:15px;font-weight:600;">Review your network from email</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="mbox-review-sub"></div>
+        </div>
+        <button class="btn btn-sm" onclick="resetApp()">✕ Start over</button>
+      </div>
+      <input type="text" id="mbox-review-search" placeholder="Search these people…" oninput="renderMboxReview()" style="font-size:14px;margin-bottom:10px;" />
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="count-pill" id="mbox-review-count">0 selected</span>
+        <button class="btn btn-sm" onclick="mboxSelectAll(true)">Select all shown</button>
+        <button class="btn btn-sm" onclick="mboxSelectAll(false)">Deselect all shown</button>
+        <button class="btn btn-sm" id="clean-firms-btn" onclick="cleanUpFirmNames()">🔎 Clean up firm names</button>
+        <div style="margin-left:auto;">
+          <button class="btn btn-primary btn-sm" id="mbox-continue-btn" onclick="confirmMboxContacts()" disabled>Continue to selection →</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <table class="contact-table">
+        <thead>
+          <tr>
+            <th style="width:36px;"></th>
+            <th>Contact</th>
+            <th>Company (editable)</th>
+            <th>Why flagged</th>
+          </tr>
+        </thead>
+        <tbody id="mbox-review-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Selection section -->
+  <div id="selection-section" style="display:none;">
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:15px;font-weight:600;">Choose who to email</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="sel-sub"></div>
+        </div>
+        <button class="btn btn-sm" onclick="resetApp()">✕ Upload different file</button>
+      </div>
+
+      <!-- Collapsible: Search by name -->
+      <div class="collapse-section">
+        <button class="collapse-header" onclick="toggleCollapse('coll-search', this)" aria-expanded="true">
+          <span class="collapse-caret">▾</span> Search by name
+        </button>
+        <div id="coll-search" class="collapse-body">
+          <input type="text" id="sel-search" placeholder="Search by name, firm, industry, group, or role…  (e.g. &quot;Goldman&quot;, &quot;real estate&quot;, &quot;AKPsi&quot;)"
+            oninput="applyFilters()" style="font-size:14px;" />
+        </div>
+      </div>
+
+      <!-- Collapsible: Filter by firm -->
+      <div class="collapse-section">
+        <button class="collapse-header" onclick="toggleCollapse('coll-firm', this)" aria-expanded="true">
+          <span class="collapse-caret">▾</span> Filter by firm
+        </button>
+        <div id="coll-firm" class="collapse-body">
+          <div id="firm-chips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Collapsible: Filter by industry -->
+      <div class="collapse-section">
+        <button class="collapse-header" onclick="toggleCollapse('coll-industry', this)" aria-expanded="true">
+          <span class="collapse-caret">▾</span> Filter by industry
+        </button>
+        <div id="coll-industry" class="collapse-body">
+          <div id="industry-chips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="queue-header" style="flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;">
+          <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)" style="width:16px;height:16px;cursor:pointer;" />
+          Select all shown
+        </label>
+        <span class="count-pill" id="sel-count">0 selected</span>
+        <button class="btn btn-sm" onclick="collapseAllGroups(true)" style="margin-left:4px;">Collapse all</button>
+        <button class="btn btn-sm" onclick="collapseAllGroups(false)">Expand all</button>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" id="generate-btn" onclick="generateForSelected()" disabled>Generate emails →</button>
+        </div>
+      </div>
+      <table class="contact-table" id="select-table">
+        <thead>
+          <tr>
+            <th style="width:36px;"></th>
+            <th>Contact</th>
+            <th>Industry</th>
+            <th>Group · Connection</th>
+          </tr>
+        </thead>
+      </table>
+      <div id="no-matches" style="display:none;text-align:center;padding:2rem;color:var(--text-muted);font-size:13px;">
+        No contacts match your search. Try a different term or clear the filters.
+      </div>
+    </div>
+  </div>
+
+  <!-- Processing section -->
+  <div id="processing-section" style="display:none;">
+
+    <!-- Connection status banner -->
+    <div id="conn-banner" style="display:none;border-radius:12px;padding:12px 16px;margin-bottom:1.25rem;font-size:13px;line-height:1.5;border:1px solid transparent;">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <span id="conn-icon" style="font-size:16px;line-height:1.2;"></span>
+        <div style="flex:1;">
+          <div id="conn-title" style="font-weight:600;margin-bottom:2px;"></div>
+          <div id="conn-detail"></div>
+        </div>
+        <button id="conn-recheck" class="btn btn-sm" onclick="recheckConnection()" style="white-space:nowrap;">Re-check</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;">
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:600;" id="proc-title">Generating emails…</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="proc-sub"></div>
+        </div>
+        <button class="btn btn-sm" onclick="backToSelection()">← Back to selection</button>
+        <button class="btn btn-sm" onclick="resetApp()">✕ Start over</button>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span id="prog-label">Starting…</span>
+          <span id="prog-count">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="queue-header">
+        <h2>Email queue</h2>
+        <span class="count-pill" id="done-count">0 ready</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" id="open-all-btn" onclick="openAllInGmail()" disabled>Open all in Gmail ↗</button>
+        </div>
+      </div>
+      <table class="contact-table">
+        <thead>
+          <tr>
+            <th>Contact</th>
+            <th>Company &amp; industry</th>
+            <th>Group · Connection</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="queue-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Email preview drawer -->
+<div id="drawer" class="drawer-bg" style="display:none;" onclick="closeDrawer(event)">
+  <div class="drawer">
+    <div class="drawer-header">
+      <div id="drawer-avatar" class="avatar"></div>
+      <h3 id="drawer-name"></h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeDrawerDirect()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div id="drawer-meta" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+      <div>
+        <span class="field-label">Article referenced in email</span>
+        <div id="drawer-news"></div>
+      </div>
+      <div>
+        <span class="field-label">Subject</span>
+        <input type="text" id="drawer-subject" />
+      </div>
+      <div>
+        <span class="field-label">Body — edit freely before sending</span>
+        <textarea id="drawer-body" rows="14"></textarea>
+      </div>
+      <div class="info-box">
+        Tip: Click "Open in Gmail" to launch a pre-filled compose window. Your edits above will carry over.
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <button class="btn btn-sm" onclick="copyDrawerEmail()">⎘ Copy</button>
+      <button class="btn btn-primary btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div id="modal-settings" class="modal-bg" style="display:none;">
+  <div class="modal">
+    <h3>⚙ Settings</h3>
+    <div class="modal-field"><label>Your name (used in sign-off)</label><input type="text" id="set-name" placeholder="Alex Johnson" /></div>
+    <div class="modal-field">
+      <label>About you — school, year, clubs, internships, anything that creates common ground</label>
+      <textarea id="set-profile" rows="4" placeholder="e.g. Male student at Cornell Hotel School (we're called 'Hotelies'), going into junior year. Clubs: Alpha Kappa Psi (AKPsi), CREDIT, Cornell Real Estate Club (CREC). Interning in IB at BofA next summer."></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Subject line style</label>
+      <input type="text" id="set-subject-style" placeholder="e.g. [Hotelie + Incoming @ BofA] Catching Up Soon" />
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">The app builds a bracketed tag from whatever you share with each contact, then a short reason for the email.</div>
+    </div>
+    <div class="modal-field">
+      <label>Sign-off style</label>
+      <select id="set-signoff">
+        <option value="Best">Best,</option>
+        <option value="Cheers">Cheers,</option>
+        <option value="Warm regards">Warm regards,</option>
+        <option value="Talk soon">Talk soon,</option>
+        <option value="Thanks">Thanks,</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>Email tone</label>
+      <select id="set-tone">
+        <option value="warm and casual">Warm and casual</option>
+        <option value="professional and concise">Professional and concise</option>
+        <option value="friendly and enthusiastic">Friendly and enthusiastic</option>
+        <option value="brief and direct">Brief and direct</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>Your writing style</label>
+      <div style="border:1px dashed var(--border-strong);border-radius:var(--radius);padding:14px;text-align:center;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:500;margin-bottom:2px;">Upload a .zip of your sent emails</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">The app reads them on your computer to learn your tone. Nothing is uploaded anywhere.</div>
+        <button class="btn btn-sm" onclick="document.getElementById('zip-input').click()">Choose .zip file</button>
+        <input type="file" id="zip-input" accept=".zip" style="display:none;" onchange="handleEmailZip(this.files[0])" />
+        <div id="zip-status" style="font-size:12px;margin-top:8px;"></div>
+      </div>
+      <label style="margin-top:6px;">Style sample the app will match (auto-filled from your zip, or paste/edit manually)</label>
+      <textarea id="set-style" rows="6" placeholder="Hi Sarah,&#10;&#10;Hope you're doing well! Just wanted to check in…"></textarea>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Tip: in Google Takeout, export Gmail as .zip. Or zip up a few .eml / .txt emails you've sent.</div>
+    </div>
+    <div class="modal-field">
+      <label>Max email length</label>
+      <select id="set-length">
+        <option value="under 100 words">Very short (under 100 words)</option>
+        <option value="under 150 words" selected>Short (under 150 words)</option>
+        <option value="under 200 words">Medium (under 200 words)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;">
+      <button class="btn" onclick="closeModal('modal-settings')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────
+const AVATAR_PALETTES = [
+  ['#dbeafe','#1e40af'],['#dcfce7','#166534'],['#fce7f3','#9d174d'],
+  ['#ede9fe','#5b21b6'],['#ffedd5','#9a3412'],['#fef9c3','#854d0e'],
+  ['#e0f2fe','#0c4a6e'],['#fce7f3','#831843'],
+];
+function avatarPalette(i) { return AVATAR_PALETTES[i % AVATAR_PALETTES.length]; }
+function initials(name) { return (name||'?').trim().split(/\s+/).map(p=>p[0]).join('').toUpperCase().slice(0,2); }
+
+// Live article search — called per contact before email generation
+async function fetchArticleForContact(contact) {
+  const company  = (contact.company  || '').trim();
+  const industry = (contact.industry || '').trim();
+  const division = (contact.group    || '').trim();
+  const position = (contact.title    || '').trim();
+
+  // Build a SECTOR-FIRST search query. The goal is articles relevant to the
+  // person's field and specialty — deals, trends, market moves — NOT just news
+  // about their own employer. We combine industry + their role/specialty.
+  // The position often reveals the sub-specialty (e.g. "real estate debt",
+  // "equity derivatives", "oncology R&D") which is the most useful signal.
+  const specialty = [industry, division, position].filter(Boolean).join(' ');
+  const searchQuery = specialty
+    ? `${specialty} recent deals trends news 2026`
+    : `${company} industry news 2026`;
+
+  const searchPrompt = `Search the web for recent news about: "${searchQuery}".
+
+I'm writing to a professional whose work is:
+- Field / industry: ${industry || 'unknown'}
+- Role / specialty: ${position || 'unknown'}${division ? `\n- Division / focus area: ${division}` : ''}${company ? `\n- Employer (for context only — do NOT require the article to be about this company): ${company}` : ''}
+
+Find ONE specific, real, recent article (published in 2025 or 2026) about a notable development in THEIR SECTOR OR SPECIALTY — not necessarily their own firm. Think about what someone in this exact role would discuss with a peer over coffee.
+
+Good examples of what to look for:
+- A recent notable deal, transaction, or fundraise in their specialty (e.g. for someone in real estate debt: a major CRE refinancing or distressed-debt sale)
+- A market shift, regulatory change, or trend reshaping their corner of the industry
+- A competitor or peer-firm move that signals where the sector is heading
+- New data, a benchmark report, or a high-profile move by a major player in the space
+
+Avoid generic "state of the industry" puff pieces. Prefer concrete, specific, recent stories with real names, numbers, or deals. The article does NOT need to mention their employer at all.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "headline": "exact article headline",
+  "source": "publication name (e.g. Reuters, Bloomberg, The Real Deal, PitchBook)",
+  "url": "full URL of the article",
+  "key_finding": "one sentence on the specific deal/development and why it's notable",
+  "why_relevant": "one sentence on why someone in ${position || industry} would care about this"
+}`;
+
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{ role: 'user', content: searchPrompt }]
+    })
+  });
+  if (!res.ok) throw new Error(`Search API ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'API error');
+
+  // Collect text from all blocks including tool_result blocks from web search
+  let allText = '';
+  for (const block of (data.content || [])) {
+    if (block.type === 'text') {
+      allText += block.text + '\n';
+    } else if (block.type === 'tool_result') {
+      const inner = Array.isArray(block.content) ? block.content : [];
+      for (const ic of inner) { if (ic.type === 'text') allText += ic.text + '\n'; }
+    }
+  }
+
+  // Extract first complete JSON object from response text
+  const jsonMatch = allText.match(/\{[\s\S]*?\}/);
+  if (!jsonMatch) throw new Error('No JSON in response: ' + allText.slice(0, 200));
+  return JSON.parse(jsonMatch[0]);
+}
+
+// ── State ──────────────────────────────────────────────────
+let allContacts = [];   // full uploaded list
+let contacts = [];      // working set (the selected contacts being processed)
+let emailResults = {};
+let settings = JSON.parse(localStorage.getItem('ne_settings') || '{}');
+let activeDrawerIdx = null;
+let processing = false;
+
+// ── File handling ──────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls','csv'].includes(ext)) { alert('Please upload an .xlsx or .csv file.'); return; }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      parseContacts(rows);
+    } catch(err) {
+      alert('Could not read that file. Make sure it is a valid Excel or CSV file.');
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ── Build network from sent email (.zip or .mbox) ──────────
+function handleMboxDrop(e) {
+  e.preventDefault();
+  document.getElementById('mbox-drop-zone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) handleMboxFile(file);
+}
+
+async function handleMboxFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['zip','mbox'].includes(ext)) { alert('Please upload a .zip (from Google Takeout) or a .mbox file.'); return; }
+
+  const progress = document.getElementById('mbox-progress');
+  const ptext = document.getElementById('mbox-progress-text');
+  progress.style.display = 'block';
+  ptext.textContent = 'Reading ' + file.name + '…';
+
+  try {
+    let mboxBlob = null;  // we stream from a Blob so we never build one huge string
+
+    if (ext === 'zip') {
+      if (typeof JSZip === 'undefined') {
+        alert('Zip library not loaded. Check your internet connection and reopen the file.');
+        progress.style.display = 'none';
+        return;
+      }
+      const zip = await JSZip.loadAsync(file);
+      // Find the Sent mbox inside the Takeout zip
+      let sentEntry = null;
+      const allMbox = [];
+      zip.forEach((path, entry) => {
+        if (entry.dir) return;
+        if (path.toLowerCase().endsWith('.mbox')) {
+          allMbox.push(entry);
+          if (/sent/i.test(path)) sentEntry = entry;
+        }
+      });
+      const target = sentEntry || allMbox[0];
+      if (!target) {
+        alert('No .mbox file found inside the zip. Make sure this is a Gmail export from Google Takeout.');
+        progress.style.display = 'none';
+        return;
+      }
+      ptext.textContent = 'Extracting ' + target.name.split('/').pop() + '… (large files can take a minute)';
+      // Get the entry as a Blob, NOT a string — avoids the 512MB string-length limit
+      mboxBlob = await target.async('blob');
+    } else {
+      mboxBlob = file;  // a File is already a Blob
+    }
+
+    // Stream the blob in chunks, processing one message at a time
+    const byEmail = {};
+    await streamMboxBlob(mboxBlob, (msg) => processMboxMessage(msg, byEmail), (done, total) => {
+      const mb = (b) => (b / (1024*1024)).toFixed(0);
+      ptext.textContent = 'Scanning your sent mail… ' + mb(done) + ' / ' + mb(total) + ' MB';
+    });
+
+    const rows = finalizeMboxRows(byEmail);
+
+    if (!rows.length) {
+      alert('Could not find any sent emails with recipients in that file.');
+      progress.style.display = 'none';
+      return;
+    }
+
+    progress.style.display = 'none';
+    showMboxReview(rows);
+  } catch(err) {
+    console.error(err);
+    if (/Invalid string length|allocation|out of memory/i.test(err.message || '')) {
+      alert('This file is too large for the browser to load all at once (' +
+            (file.size/(1024*1024)).toFixed(0) + ' MB).\n\n' +
+            'Two easy fixes:\n' +
+            '1. Unzip the file yourself and upload just the "Sent.mbox" file directly (skips the zip overhead), or\n' +
+            '2. In Google Takeout, re-export Gmail with only the "Sent" label, or a narrower date range, to get a smaller file.');
+    } else {
+      alert('Could not read that file: ' + err.message);
+    }
+    progress.style.display = 'none';
+  }
+}
+
+// Stream an mbox Blob in chunks, calling onMessage for each complete message.
+// Never holds more than one chunk + one in-progress message in memory.
+async function streamMboxBlob(blob, onMessage, onProgress) {
+  const CHUNK = 8 * 1024 * 1024;  // 8 MB at a time
+  const decoder = new TextDecoder('utf-8');
+  const total = blob.size;
+  let offset = 0;
+  let buffer = '';
+
+  while (offset < total) {
+    const slice = blob.slice(offset, offset + CHUNK);
+    const buf = await slice.arrayBuffer();
+    offset += CHUNK;
+    const isLast = offset >= total;
+    buffer += decoder.decode(new Uint8Array(buf), { stream: !isLast });
+
+    // Messages are separated by a line beginning with "From ".
+    // Split, process all complete messages, keep the last partial one in the buffer.
+    const parts = buffer.split(/\r?\nFrom /);
+    buffer = parts.pop();  // last piece may be incomplete; hold it for the next chunk
+    for (const msg of parts) {
+      onMessage(msg);
+    }
+
+    if (onProgress) onProgress(Math.min(offset, total), total);
+    await sleep(0);  // yield so the UI/progress can update and the tab stays responsive
+  }
+
+  // Process whatever remains as the final message
+  if (buffer.trim()) onMessage(buffer);
+}
+
+// Signals that a recipient is a real professional/business contact.
+// Used to score recipients so the network builder pre-selects the right people.
+const NETWORKING_KEYWORDS = [
+  'availability','schedule','your time','find time','grab a coffee','coffee chat','catch up','catch-up',
+  'catching up','quick call','quick chat','hop on a call','hop on a quick','sit down','meet up','grab time',
+  'few minutes','fifteen minutes','15 minutes','connect with you','love to connect','reach out','pick your brain',
+  'chat about','call this week','call next week','some time to chat'
+];
+const BUSINESS_KEYWORDS = [
+  'firm','fund','capital','partners','ventures','private equity','venture capital','investment','investing',
+  'banking','analyst','associate','recruiting','recruiter','internship','intern','full-time','full time',
+  'role','position','opportunity','deal','portfolio','client','interview','networking','career','resume',
+  'cv','referral','offer','hiring','team','equity research','asset management','hedge fund','consulting',
+  'real estate','m&a','ipo','pitch','diligence','acquisition','transaction'
+];
+
+// Scan a lowercased text blob and return which keywords from a list it contains
+function matchesAny(textLower, list) {
+  const hits = [];
+  for (const kw of list) { if (textLower.includes(kw)) hits.push(kw); }
+  return hits;
+}
+
+// Process a single mbox message, aggregating recipients into byEmail
+function processMboxMessage(msg, byEmail) {
+  if (!msg.trim()) return;
+  const headerEnd = msg.search(/\r?\n\r?\n/);
+  const headers = headerEnd > -1 ? msg.slice(0, headerEnd) : msg;
+
+  const toLine = matchHeader(headers, 'To');
+  const subject = matchHeader(headers, 'Subject') || '';
+  const dateStr = matchHeader(headers, 'Date') || '';
+  if (!toLine) return;
+
+  // Look at subject + a bounded slice of the body for relevance signals.
+  // Cap the body scan so huge messages stay fast.
+  const bodyStart = headerEnd > -1 ? headerEnd : 0;
+  const bodySnippet = msg.slice(bodyStart, bodyStart + 2000);
+  const scanText = (subject + ' ' + bodySnippet).toLowerCase();
+
+  const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
+  const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
+
+  for (const r of parseAddresses(toLine)) {
+    if (!r.email) continue;
+    const key = r.email.toLowerCase();
+    if (isNoise(key)) continue;
+    if (!byEmail[key]) {
+      byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
+                       netHits: new Set(), bizHits: new Set() };
+    }
+    const rec = byEmail[key];
+    rec.count++;
+    if (r.name && (!rec.name || rec.name.length < r.name.length)) rec.name = r.name;
+    const d = dateStr ? new Date(dateStr) : null;
+    if (d && !isNaN(d) && (!rec.lastDate || d > rec.lastDate)) rec.lastDate = d;
+    if (subject && rec.subjects.length < 3) rec.subjects.push(subject.replace(/^(Re|Fwd):\s*/i, ''));
+    netHits.forEach(h => rec.netHits.add(h));
+    bizHits.forEach(h => rec.bizHits.add(h));
+  }
+}
+
+// Turn the aggregated recipients into ranked contact rows
+function finalizeMboxRows(byEmail) {
+  const rows = Object.values(byEmail).map(rec => {
+    const { first, last } = splitName(rec.name, rec.email);
+    const company = inferCompanyFromEmail(rec.email);
+    const hasBizDomain = !!company;  // non-personal domain => likely works at a firm
+
+    // Relevance score: weight networking intent, business topics, business domain, and frequency.
+    // Stricter model: frequency alone is NOT enough. A contact needs a genuine business
+    // signal (coffee-chat language, business topic, or a work email domain) to score well.
+    const netHit = rec.netHits.size > 0;
+    const bizHit = rec.bizHits.size > 0;
+    const strongNet = rec.netHits.size >= 2;   // multiple scheduling/coffee phrases = clearly networking
+    const strongBiz = rec.bizHits.size >= 2;   // multiple business terms = clearly business
+
+    let score = 0;
+    if (netHit)       score += 3;            // asked about availability / coffee chat / scheduling
+    if (strongNet)    score += 1;            // extra weight for repeated networking language
+    if (bizHit)       score += 2;            // discussed firm / role / deal / business topic
+    if (strongBiz)    score += 1;
+    if (hasBizDomain) score += 3;            // corporate email domain (raised from 2)
+    if (rec.count >= 5) score += 1; else if (rec.count >= 3) score += 0.5;  // frequency is a minor nudge only
+
+    // Hard gate: with no business signal at all, force the score to 0 no matter how often emailed.
+    // This stops friends/family you email constantly from being added.
+    const hasAnyBizSignal = netHit || bizHit || hasBizDomain;
+    if (!hasAnyBizSignal) score = 0;
+
+    // Human-readable reasons for why this person was flagged as business-relevant
+    const reasons = [];
+    if (netHit)       reasons.push('coffee chat');
+    if (bizHit)       reasons.push('business topic');
+    if (hasBizDomain) reasons.push('work email');
+    if (hasAnyBizSignal && rec.count >= 3) reasons.push(rec.count + '× emailed');
+
+    return {
+      firstName: first,
+      lastName: last,
+      email: rec.email,
+      company: company,
+      title: '',
+      industry: '',
+      group: '',
+      connection: netHit ? 'Networking / coffee chat'
+                 : (bizHit ? 'Business contact'
+                 : (rec.count >= 5 ? 'Frequent contact'
+                 : (rec.count >= 2 ? 'Occasional contact' : 'Emailed once'))),
+      context: 'You have emailed ' + rec.count + ' time' + (rec.count !== 1 ? 's' : '')
+        + (rec.lastDate ? ', last on ' + rec.lastDate.toLocaleDateString() : '')
+        + (rec.subjects.length ? '. Recent subjects: ' + rec.subjects.join('; ') : ''),
+      _count: rec.count,
+      _lastDate: rec.lastDate ? rec.lastDate.getTime() : 0,
+      _score: score,
+      _reasons: reasons,
+    };
+  });
+  // Sort by business relevance first, then how often/recently you contacted them
+  rows.sort((a, b) => (b._score - a._score) || (b._count - a._count) || (b._lastDate - a._lastDate));
+  return rows;
+}
+
+function matchHeader(headers, name) {
+  // Header may be folded across lines; join continuation lines (start with space/tab)
+  const re = new RegExp('^' + name + ':\\s*(.*(?:\\r?\\n[ \\t].*)*)', 'im');
+  const m = headers.match(re);
+  if (!m) return '';
+  return m[1].replace(/\r?\n[ \t]+/g, ' ').trim();
+}
+
+function parseAddresses(line) {
+  // Split on commas not inside quotes, then extract name + email
+  const parts = line.split(/,(?![^<]*>)/);
+  const out = [];
+  for (const part of parts) {
+    const p = part.trim();
+    if (!p) continue;
+    let name = '', email = '';
+    const angle = p.match(/^(.*?)<([^>]+)>/);
+    if (angle) {
+      name = angle[1].trim().replace(/^["']|["']$/g, '');
+      email = angle[2].trim();
+    } else if (/@/.test(p)) {
+      email = p.replace(/[<>]/g, '').trim();
+    }
+    if (email) out.push({ name, email });
+  }
+  return out;
+}
+
+// Filter out obvious non-network addresses
+function isNoise(email) {
+  const noisePatterns = [
+    'no-reply', 'noreply', 'donotreply', 'do-not-reply', 'notifications', 'notification@',
+    'mailer-daemon', 'postmaster', 'support@', 'help@', 'info@', 'hello@', 'team@',
+    'receipts', 'billing@', 'orders@', 'auto-confirm', 'calendar-', 'unsubscribe'
+  ];
+  return noisePatterns.some(p => email.includes(p));
+}
+
+function splitName(name, email) {
+  if (name && /\s/.test(name)) {
+    const parts = name.split(/\s+/);
+    return { first: parts[0], last: parts.slice(1).join(' ') };
+  }
+  if (name) return { first: name, last: '' };
+  // Derive from email local part, e.g. jane.smith@ -> Jane Smith
+  const local = email.split('@')[0].replace(/[._]+/g, ' ');
+  const parts = local.split(/\s+/).map(s => s.charAt(0).toUpperCase() + s.slice(1));
+  return { first: parts[0] || email, last: parts.slice(1).join(' ') };
+}
+
+// Guess a company name from the email domain
+// Known firm normalizations: maps messy domain labels and abbreviations to clean names.
+// Used offline; the web-search enrichment (when the connection is live) handles the rest.
+const FIRM_NORMALIZE = {
+  ms: 'Morgan Stanley', morganstanley: 'Morgan Stanley', 'morgan-stanley': 'Morgan Stanley',
+  gs: 'Goldman Sachs', goldmansachs: 'Goldman Sachs', goldman: 'Goldman Sachs',
+  jpm: 'JPMorgan', jpmorgan: 'JPMorgan', jpmchase: 'JPMorgan Chase', chase: 'JPMorgan Chase',
+  bofa: 'Bank of America', baml: 'Bank of America', bankofamerica: 'Bank of America',
+  citi: 'Citi', citigroup: 'Citi', citibank: 'Citi',
+  barclays: 'Barclays', db: 'Deutsche Bank', deutschebank: 'Deutsche Bank',
+  ubs: 'UBS', creditsuisse: 'Credit Suisse', cs: 'Credit Suisse',
+  wellsfargo: 'Wells Fargo', wf: 'Wells Fargo',
+  blackstone: 'Blackstone', bx: 'Blackstone', blackrock: 'BlackRock', blk: 'BlackRock',
+  kkr: 'KKR', apollo: 'Apollo Global Management', carlyle: 'The Carlyle Group',
+  bain: 'Bain & Company', baincapital: 'Bain Capital', bcg: 'Boston Consulting Group',
+  mckinsey: 'McKinsey & Company', deloitte: 'Deloitte', pwc: 'PwC', ey: 'EY', kpmg: 'KPMG',
+  evercore: 'Evercore', lazard: 'Lazard', moelis: 'Moelis & Company', jefferies: 'Jefferies',
+  pjt: 'PJT Partners', centerview: 'Centerview Partners', houlihan: 'Houlihan Lokey',
+  cbre: 'CBRE', jll: 'JLL', cushwake: 'Cushman & Wakefield', eastdil: 'Eastdil Secured',
+  google: 'Google', goog: 'Google', meta: 'Meta', amazon: 'Amazon', microsoft: 'Microsoft',
+  msft: 'Microsoft', apple: 'Apple',
+};
+
+function inferCompanyFromEmail(email) {
+  const domain = (email.split('@')[1] || '').toLowerCase();
+  // Personal email providers tell us nothing about employer
+  const personal = ['gmail.com','yahoo.com','hotmail.com','outlook.com','icloud.com','aol.com','proton.me','protonmail.com','me.com','live.com','msn.com'];
+  if (!domain || personal.includes(domain)) return '';
+  // Take the main domain label (e.g. "morganstanley" from "morganstanley.com")
+  let base = domain.split('.')[0].replace(/[^a-z0-9]/g, '');
+  // Apply known normalization if we recognize it
+  if (FIRM_NORMALIZE[base]) return FIRM_NORMALIZE[base];
+  // Otherwise title-case the label as a best guess
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+// Normalize a firm string the USER typed or that came from a header (not a domain).
+// Handles abbreviations like "MS" and squished forms like "morganstanley".
+function normalizeFirmName(raw) {
+  if (!raw) return '';
+  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (FIRM_NORMALIZE[key]) return FIRM_NORMALIZE[key];
+  return raw.trim();
+}
+
+// ── Review screen for email-derived contacts ───────────────
+let mboxRows = [];
+let mboxInclude = new Set();
+
+function showMboxReview(rows) {
+  mboxRows = rows;
+  // Pre-include only people with a STRONG business signal. Threshold raised to 5,
+  // which needs e.g. a work email plus a business topic, or clear coffee-chat language.
+  // A single weak signal alone will not auto-select someone.
+  mboxInclude = new Set();
+  rows.forEach((r, i) => { if (r._score >= 5) mboxInclude.add(i); });
+
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('mbox-review-section').style.display = 'block';
+  document.getElementById('mbox-review-sub').textContent =
+    'Found ' + rows.length + ' people you have emailed. The app pre-selected only those with strong business signals (work email domains, coffee-chat language like "availability" or "schedule", and business topics). Frequency alone no longer counts. The tags show why each was flagged. Check anyone the app missed, uncheck anyone who does not belong, and fix company names, then continue.';
+  renderMboxReview();
+}
+
+function renderMboxReview() {
+  const q = (document.getElementById('mbox-review-search').value || '').toLowerCase().trim();
+  const tbody = document.getElementById('mbox-review-body');
+  let shown = 0;
+  tbody.innerHTML = mboxRows.map((r, i) => {
+    const hay = (r.firstName + ' ' + r.lastName + ' ' + r.email + ' ' + r.company).toLowerCase();
+    if (q && !hay.includes(q)) return '';
+    shown++;
+    const [bg, fg] = avatarPalette(i);
+    const fullName = [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email;
+    const checked = mboxInclude.has(i) ? 'checked' : '';
+    const reasonChips = (r._reasons || []).map(reason => {
+      const cls = reason === 'coffee chat' ? 'reason-coffee'
+                : reason === 'business topic' ? 'reason-biz'
+                : reason === 'work email' ? 'reason-work' : 'reason-freq';
+      return `<span class="reason-chip ${cls}">${reason}</span>`;
+    }).join('');
+    return `<tr>
+      <td><input type="checkbox" ${checked} onchange="toggleMboxRow(${i})" style="width:16px;height:16px;cursor:pointer;" /></td>
+      <td>
+        <div class="name-cell">
+          <div class="avatar" style="background:${bg};color:${fg};">${initials(fullName)}</div>
+          <div>
+            <div class="name">${fullName}</div>
+            <div class="email-sub">${r.email}</div>
+          </div>
+        </div>
+      </td>
+      <td><input type="text" value="${(r.company||'').replace(/"/g,'&quot;')}" onchange="updateMboxField(${i},'company',this.value)" placeholder="Company?" style="font-size:12px;padding:5px 7px;width:120px;" /></td>
+      <td>${reasonChips || '<span style="font-size:11px;color:var(--text-muted);">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('mbox-review-count').textContent = mboxInclude.size + ' selected';
+  document.getElementById('mbox-continue-btn').disabled = mboxInclude.size === 0;
+}
+
+function toggleMboxRow(i) {
+  if (mboxInclude.has(i)) mboxInclude.delete(i); else mboxInclude.add(i);
+  document.getElementById('mbox-review-count').textContent = mboxInclude.size + ' selected';
+  document.getElementById('mbox-continue-btn').disabled = mboxInclude.size === 0;
+}
+
+function updateMboxField(i, field, value) {
+  mboxRows[i][field] = value.trim();
+}
+
+function mboxSelectAll(on) {
+  const q = (document.getElementById('mbox-review-search').value || '').toLowerCase().trim();
+  mboxRows.forEach((r, i) => {
+    const hay = (r.firstName + ' ' + r.lastName + ' ' + r.email + ' ' + r.company).toLowerCase();
+    if (!q || hay.includes(q)) { if (on) mboxInclude.add(i); else mboxInclude.delete(i); }
+  });
+  renderMboxReview();
+}
+
+// ── Verify & clean firm names via web search (needs live connection) ──
+async function cleanUpFirmNames() {
+  const btn = document.getElementById('clean-firms-btn');
+
+  // Gather unique non-empty firm names currently on the rows
+  const firmSet = new Set();
+  mboxRows.forEach(r => { if (r.company && r.company.trim()) firmSet.add(r.company.trim()); });
+  const firms = [...firmSet];
+
+  if (!firms.length) {
+    alert('No firm names to clean up yet.');
+    return;
+  }
+
+  // First, apply the local normalization map instantly (works offline)
+  let localFixed = 0;
+  mboxRows.forEach(r => {
+    if (r.company) {
+      const norm = normalizeFirmName(r.company);
+      if (norm !== r.company) { r.company = norm; localFixed++; }
+    }
+  });
+
+  // Then try web-search verification for the rest, if the connection is live
+  if (liveSearchWorks === false) {
+    renderMboxReview();
+    alert('Applied ' + localFixed + ' known firm corrections offline.\n\n'
+      + 'Web verification needs the live connection (the green banner on the generate screen), '
+      + 'so the remaining names were left as best guesses. You can edit any of them by hand.');
+    return;
+  }
+
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = '🔎 Checking firms…';
+
+  try {
+    // Re-collect after local fixes
+    const remaining = [...new Set(mboxRows.map(r => (r.company||'').trim()).filter(Boolean))];
+
+    const prompt = 'I have a list of company names extracted from email domains. Some are abbreviations, '
+      + 'lowercase, or squished together. Return the correct official company name for each. '
+      + 'If a name is ambiguous or you are not confident, return it unchanged.\n\n'
+      + 'Input list (JSON array):\n' + JSON.stringify(remaining) + '\n\n'
+      + 'Return ONLY a JSON object mapping each input string to its corrected official name, like:\n'
+      + '{"morganstanley": "Morgan Stanley", "ms": "Morgan Stanley", "bx": "Blackstone"}\n'
+      + 'No markdown, no explanation.';
+
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!res.ok) throw new Error('API ' + res.status);
+    const data = await res.json();
+    let allText = '';
+    for (const block of (data.content || [])) {
+      if (block.type === 'text') allText += block.text + '\n';
+      else if (block.type === 'tool_result') {
+        const inner = Array.isArray(block.content) ? block.content : [];
+        for (const ic of inner) if (ic.type === 'text') allText += ic.text + '\n';
+      }
+    }
+    const jsonMatch = allText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No mapping returned');
+    const mapping = JSON.parse(jsonMatch[0]);
+
+    // Build a case-insensitive lookup and apply corrections
+    const lookup = {};
+    for (const [k, v] of Object.entries(mapping)) lookup[k.toLowerCase().trim()] = v;
+
+    let webFixed = 0;
+    mboxRows.forEach(r => {
+      if (!r.company) return;
+      const corrected = lookup[r.company.toLowerCase().trim()];
+      if (corrected && corrected !== r.company) { r.company = corrected; webFixed++; }
+    });
+
+    renderMboxReview();
+    alert('Cleaned up firm names: ' + localFixed + ' from the known list, ' + webFixed + ' verified via web search.');
+  } catch(e) {
+    console.error(e);
+    renderMboxReview();
+    alert('Applied ' + localFixed + ' known firm corrections, but the web verification step failed: '
+      + e.message + '. You can still edit any name by hand.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+function confirmMboxContacts() {
+  const chosen = mboxRows.filter((r, i) => mboxInclude.has(i)).map(r => ({
+    firstName: r.firstName, lastName: r.lastName, email: r.email,
+    company: r.company, title: r.title, industry: r.industry,
+    group: r.group, connection: r.connection, context: r.context
+  }));
+  if (!chosen.length) return;
+  // Feed into the same contact pipeline the Excel path uses
+  contacts = chosen.map((c, i) => ({ ...c, id: i, name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email }));
+  allContacts = contacts.slice();
+  document.getElementById('mbox-review-section').style.display = 'none';
+  showSelection();
+}
+
+function parseContacts(rows) {
+  // Flexible column matching
+  function findCol(row, options) {
+    const keys = Object.keys(row);
+    for (const opt of options) {
+      const match = keys.find(k => k.toLowerCase().replace(/\s/g,'').includes(opt.toLowerCase().replace(/\s/g,'')));
+      if (match) return row[match];
+    }
+    return '';
+  }
+
+  contacts = rows.map((row, i) => {
+    const firstName = findCol(row, ['firstname','first name','first']);
+    const lastName  = findCol(row, ['lastname','last name','last']);
+    const fullName  = [firstName, lastName].filter(Boolean).join(' ') || `Contact ${i+1}`;
+    return {
+      id: i,
+      firstName,
+      lastName,
+      name:       fullName,
+      email:      findCol(row, ['email','emailaddress','mail']),
+      title:      findCol(row, ['position','jobtitle','title','role']),
+      company:    findCol(row, ['company','employer','organization','org']),
+      industry:   findCol(row, ['industry','sector','field','vertical']),
+      group:      findCol(row, ['group','team','category','cohort']),
+      connection: findCol(row, ['connection','relationship','how','source']),
+      context:    findCol(row, ['notes','context','details','info']),
+    };
+  }).filter(c => c.firstName || c.lastName);
+
+  if (!contacts.length) {
+    alert('No valid contacts found. Make sure your file has First Name and Last Name columns.');
+    return;
+  }
+
+  allContacts = contacts.slice();  // preserve the full list
+  showSelection();
+}
+
+// ── Selection screen ───────────────────────────────────────
+let selectedIds = new Set();
+
+function toggleCollapse(bodyId, headerBtn) {
+  const body = document.getElementById(bodyId);
+  const isHidden = body.classList.toggle('hidden');
+  headerBtn.classList.toggle('collapsed', isHidden);
+  headerBtn.setAttribute('aria-expanded', String(!isHidden));
+}
+
+function showSelection() {
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('selection-section').style.display = 'block';
+  document.getElementById('sel-sub').textContent =
+    `${allContacts.length} contact${allContacts.length!==1?'s':''} loaded — search or filter, then select who to email`;
+  selectedIds = new Set();
+  buildFilterChips();
+  applyFilters();
+  updateSelCount();
+}
+
+let activeFirmFilter = null;
+let activeIndustryFilter = null;
+
+function buildFilterChips() {
+  // Collect unique firms and industries
+  const firms = [...new Set(allContacts.map(c => (c.company||'').trim()).filter(Boolean))].sort();
+  const inds  = [...new Set(allContacts.map(c => (c.industry||'').trim()).filter(Boolean))].sort();
+
+  const chip = (label, type) =>
+    `<button class="btn btn-sm filter-chip" data-type="${type}" data-val="${label.replace(/"/g,'&quot;')}" onclick="toggleChip('${type}', this)">${label}</button>`;
+
+  document.getElementById('firm-chips').innerHTML =
+    firms.length ? firms.map(f => chip(f, 'firm')).join('') : '<span style="font-size:12px;color:var(--text-muted);">No firm data in file</span>';
+  document.getElementById('industry-chips').innerHTML =
+    inds.length ? inds.map(i => chip(i, 'industry')).join('') : '<span style="font-size:12px;color:var(--text-muted);">No industry data in file</span>';
+}
+
+function toggleChip(type, btn) {
+  const val = btn.getAttribute('data-val');
+  const isActive = btn.classList.contains('chip-active');
+
+  // Clear others of same type
+  document.querySelectorAll(`.filter-chip[data-type="${type}"]`).forEach(b => b.classList.remove('chip-active'));
+
+  if (isActive) {
+    if (type === 'firm') activeFirmFilter = null; else activeIndustryFilter = null;
+  } else {
+    btn.classList.add('chip-active');
+    if (type === 'firm') activeFirmFilter = val; else activeIndustryFilter = val;
+  }
+  applyFilters();
+}
+
+function getFilteredContacts() {
+  const q = (document.getElementById('sel-search').value || '').toLowerCase().trim();
+  return allContacts.filter(c => {
+    if (activeFirmFilter && (c.company||'').trim() !== activeFirmFilter) return false;
+    if (activeIndustryFilter && (c.industry||'').trim() !== activeIndustryFilter) return false;
+    if (q) {
+      const hay = [c.name, c.company, c.industry, c.group, c.connection, c.title, c.context]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+let collapsedGroups = new Set();  // names of groups currently collapsed
+
+function applyFilters() {
+  const filtered = getFilteredContacts();
+  document.getElementById('no-matches').style.display = filtered.length ? 'none' : 'block';
+
+  // Group the filtered contacts by firm (fall back to "No firm listed")
+  const groups = {};
+  for (const c of filtered) {
+    const key = (c.company || '').trim() || 'No firm listed';
+    (groups[key] = groups[key] || []).push(c);
+  }
+  const groupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+
+  let html = '';
+  for (const gName of groupNames) {
+    const members = groups[gName];
+    const isCollapsed = collapsedGroups.has(gName);
+    const selectedInGroup = members.filter(c => selectedIds.has(c.id)).length;
+    const safeId = 'grp-' + gName.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // Group header row (its own tbody so the toggle is clean)
+    html += `<tbody>
+      <tr class="group-header-row">
+        <td colspan="4" style="padding:0;">
+          <div class="group-header">
+            <button class="group-toggle" onclick="toggleGroup('${encodeURIComponent(gName)}')" aria-expanded="${!isCollapsed}">
+              <span class="collapse-caret ${isCollapsed ? 'rot' : ''}">▾</span>
+              <span class="group-name">${gName}</span>
+              <span class="group-count">${members.length}</span>
+              ${selectedInGroup ? `<span class="group-selected">${selectedInGroup} selected</span>` : ''}
+            </button>
+            <button class="btn btn-sm group-select-btn" onclick="toggleSelectGroup('${encodeURIComponent(gName)}')">
+              ${selectedInGroup === members.length ? 'Deselect all' : 'Select all'}
+            </button>
+          </div>
+        </td>
+      </tr>`;
+
+    if (!isCollapsed) {
+      for (const c of members) {
+        const i = allContacts.indexOf(c);
+        const [bg, fg] = avatarPalette(i);
+        const checked = selectedIds.has(c.id) ? 'checked' : '';
+        html += `<tr onclick="toggleRow(${c.id}, event)" style="cursor:pointer;">
+          <td><input type="checkbox" ${checked} onclick="event.stopPropagation();toggleRow(${c.id})" style="width:16px;height:16px;cursor:pointer;" /></td>
+          <td>
+            <div class="name-cell">
+              <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
+              <div>
+                <div class="name">${c.name}</div>
+                <div class="email-sub">${c.title||'—'}</div>
+              </div>
+            </div>
+          </td>
+          <td style="color:var(--text-muted);font-size:12px;">${c.industry||'—'}</td>
+          <td style="font-size:12px;color:var(--text-muted);">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${c.group}</span><br>` : ''}${c.connection||'—'}</td>
+        </tr>`;
+      }
+    }
+    html += `</tbody>`;
+  }
+
+  // Render: remove old group tbodies and inject the new ones after the thead
+  const table = document.getElementById('select-table');
+  Array.from(table.querySelectorAll('tbody')).forEach(tb => tb.remove());
+  table.insertAdjacentHTML('beforeend', html);
+
+  // Sync "select all" checkbox state
+  const allShownSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
+  document.getElementById('select-all').checked = allShownSelected;
+}
+
+function toggleGroup(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  if (collapsedGroups.has(name)) collapsedGroups.delete(name);
+  else collapsedGroups.add(name);
+  applyFilters();
+}
+
+function toggleSelectGroup(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const members = getFilteredContacts().filter(c => ((c.company||'').trim() || 'No firm listed') === name);
+  const allSelected = members.every(c => selectedIds.has(c.id));
+  members.forEach(c => { if (allSelected) selectedIds.delete(c.id); else selectedIds.add(c.id); });
+  applyFilters();
+  updateSelCount();
+}
+
+function collapseAllGroups(collapse) {
+  if (collapse) {
+    const filtered = getFilteredContacts();
+    const names = new Set(filtered.map(c => (c.company||'').trim() || 'No firm listed'));
+    collapsedGroups = names;
+  } else {
+    collapsedGroups = new Set();
+  }
+  applyFilters();
+}
+
+function toggleRow(id, event) {
+  if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+  applyFilters();
+  updateSelCount();
+}
+
+function toggleSelectAll(checked) {
+  const filtered = getFilteredContacts();
+  filtered.forEach(c => { if (checked) selectedIds.add(c.id); else selectedIds.delete(c.id); });
+  applyFilters();
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const n = selectedIds.size;
+  document.getElementById('sel-count').textContent = `${n} selected`;
+  document.getElementById('generate-btn').disabled = n === 0;
+}
+
+function generateForSelected() {
+  // Build the working set from the full list, selected only
+  contacts = allContacts.filter(c => selectedIds.has(c.id));
+  if (!contacts.length) return;
+  startProcessing();
+}
+
+function backToSelection() {
+  if (processing && !confirm('Stop generating and go back to selection?')) return;
+  processing = false;
+  emailResults = {};
+  document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('selection-section').style.display = 'block';
+}
+
+// ── Connection check ───────────────────────────────────────
+// Tracks whether the live API (and therefore web search) is reachable.
+let liveSearchWorks = null;  // null = unknown, true = works, false = offline
+
+function showBanner(state) {
+  const banner = document.getElementById('conn-banner');
+  const icon   = document.getElementById('conn-icon');
+  const title  = document.getElementById('conn-title');
+  const detail = document.getElementById('conn-detail');
+  const recheck= document.getElementById('conn-recheck');
+  banner.style.display = 'block';
+
+  if (state === 'checking') {
+    banner.style.background = 'var(--surface-2)';
+    banner.style.borderColor = 'var(--border-strong)';
+    banner.style.color = 'var(--text-secondary)';
+    icon.textContent = '⏳';
+    title.textContent = 'Checking connection…';
+    detail.textContent = 'Testing whether live internet search is available.';
+    recheck.style.display = 'none';
+  } else if (state === 'live') {
+    banner.style.background = 'var(--success-bg)';
+    banner.style.borderColor = 'var(--success-border)';
+    banner.style.color = 'var(--success)';
+    icon.textContent = '✅';
+    title.textContent = 'Live internet search is working';
+    detail.innerHTML = 'Each email will reference a real, recent article found on the web for that contact\'s sector.';
+    recheck.style.display = 'none';
+  } else if (state === 'offline') {
+    banner.style.background = 'var(--danger-bg)';
+    banner.style.borderColor = '#fecaca';
+    banner.style.color = 'var(--danger)';
+    icon.textContent = '⚠️';
+    title.textContent = 'Live search unavailable — running in offline mode';
+    detail.innerHTML = 'The app could not reach the backend server, so emails will use a generic personalized template <strong>without a real article link</strong>. Make sure the server is running (npm start) and that ANTHROPIC_API_KEY is set in your .env file.';
+    recheck.style.display = 'inline-flex';
+  }
+}
+
+async function checkConnection() {
+  showBanner('checking');
+  try {
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'Reply with just: ok' }]
+      })
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+    await res.json();
+    liveSearchWorks = true;
+    showBanner('live');
+  } catch(e) {
+    liveSearchWorks = false;
+    showBanner('offline');
+    console.warn('Connection check failed:', e);
+  }
+  return liveSearchWorks;
+}
+
+async function recheckConnection() {
+  const ok = await checkConnection();
+  if (ok && contacts.length) {
+    // Re-run any contacts that fell back to offline templates
+    runQueue();
+  }
+}
+
+// ── Processing ─────────────────────────────────────────────
+async function startProcessing() {
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('processing-section').style.display = 'block';
+  document.getElementById('proc-sub').textContent = `${contacts.length} contact${contacts.length!==1?'s':''} loaded from your file`;
+  emailResults = {};
+  renderQueue();
+  // Check the connection first so the user knows whether search is live
+  await checkConnection();
+  runQueue();
+}
+
+async function runQueue() {
+  if (processing) return;
+  processing = true;
+  const total = contacts.length;
+  let done = 0;
+
+  updateProgress(0, total, 'Writing emails…');
+
+  // Process in batches of 3 to avoid rate limits
+  const BATCH = 3;
+  for (let i = 0; i < contacts.length; i += BATCH) {
+    const batch = contacts.slice(i, i + BATCH);
+    await Promise.all(batch.map(async c => {
+      if (liveSearchWorks === false) {
+        // Offline: skip API entirely, use generic template
+        emailResults[c.id] = fallbackEmail(c);
+        setStatus(c.id, 'done');
+      } else {
+        try {
+          const result = await generateEmail(c);
+          emailResults[c.id] = result;
+          setStatus(c.id, 'done');
+        } catch(e) {
+          emailResults[c.id] = fallbackEmail(c);
+          setStatus(c.id, 'done');
+        }
+      }
+      done++;
+      updateProgress(done, total, `Processed ${done} of ${total}…`);
+      updateDoneCount();
+    }));
+    // Small pause between batches
+    if (i + BATCH < contacts.length) await sleep(800);
+  }
+
+  document.getElementById('proc-title').textContent = '✅ All emails ready';
+  document.getElementById('proc-sub').textContent = `${total} emails written — review and send below`;
+  document.getElementById('open-all-btn').disabled = false;
+  processing = false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function generateEmail(contact) {
+  const myName = settings.name || 'me';
+  const signoff = settings.signoff || 'Best';
+  const tone = settings.tone || 'warm and casual';
+  const maxLen = settings.maxLength || 'under 150 words';
+  const styleBlock = settings.styleExamples
+    ? '\n\nIMPORTANT — match MY writing style. Below are real emails I have written. Mirror my greeting style, sentence length, level of formality, punctuation habits, and sign-off. Do not copy their content, only their voice:\n"""\n' + settings.styleExamples + '\n"""'
+    : '';
+  const groupNote      = contact.group      ? '\nDivision: '             + contact.group       : '';
+  const connectionNote = contact.connection ? '\nHow we know each other: '+ contact.connection : '';
+  const contextNote    = contact.context    ? '\nNotes: '                 + contact.context    : '';
+
+  setStatus(contact.id, 'searching');
+  let article = null;
+  try {
+    article = await fetchArticleForContact(contact);
+  } catch(e) {
+    console.warn('Article search failed for', contact.name, e);
+  }
+
+  setStatus(contact.id, 'writing');
+
+  let articleBlock;
+  if (article) {
+    articleBlock = '\nReal article to reference in this email:\n'
+      + '- Headline: "' + article.headline + '"\n'
+      + '- Source: '    + article.source   + '\n'
+      + '- URL: '       + article.url      + '\n'
+      + '- Key finding: ' + article.key_finding + '\n'
+      + '- Why relevant: ' + article.why_relevant + '\n'
+      + '\nIMPORTANT: Mention this article naturally in the body. '
+      + 'After referencing it, include the URL on its own line with a natural lead-in like '
+      + '"Saw this and thought of you: ' + article.url + '" '
+      + 'or "Worth a read: ' + article.url + '". '
+      + 'Raw URL only — no markdown link syntax.';
+  } else {
+    articleBlock = '\nNo article found. Write a personalized email about general trends in '
+      + (contact.industry || 'their industry')
+      + ' without fabricating an article or URL.';
+  }
+
+  const co  = contact.company  || 'their company';
+  const ind = contact.industry || 'unknown';
+
+  // Your own background — used to find common ground and build the subject tag
+  const profileBlock = settings.profile
+    ? '\nAbout ME (the sender) — use this to find common ground with the recipient:\n"""\n' + settings.profile + '\n"""'
+    : '';
+
+  // Subject-line instruction: bracketed tag based on whatever connects me to them
+  const subjectExample = settings.subjectStyle || '[Hotelie + Incoming @ BofA] Catching Up Soon';
+  const subjectInstruction =
+    'SUBJECT LINE — this is important. Build it in two parts:\n'
+    + '1. A bracketed tag at the front that names the strongest shared connection between ME and the recipient, drawn from my background and how we know each other. '
+    + 'Pick whatever actually overlaps — same school/club (e.g. "Hotelie", "AKPsi", "CREC", "CREDIT"), shared industry path (e.g. "Incoming @ BofA", "Real Estate"), or how we met. Combine up to two with a "+" if both are strong.\n'
+    + '2. A short, warm reason for the email after the bracket.\n'
+    + 'Match this exact format and spirit: "' + subjectExample + '"\n'
+    + 'If there is little overlap, use a single relevant tag (e.g. their industry or "Cornell") rather than forcing it. Keep the whole subject under ~9 words.';
+
+  const prompt = [
+    'Write a highly personalized professional check-in email from ' + myName + ' to ' + contact.name + '.',
+    profileBlock,
+    '',
+    'Recipient:',
+    '- Name: '     + contact.name,
+    '- Position: ' + (contact.title || 'unknown role') + ' at ' + co,
+    '- Industry: ' + ind + groupNote + connectionNote + contextNote,
+    articleBlock,
+    '',
+    'Requirements:',
+    '- Tone: ' + tone,
+    '- Length: ' + maxLen + ' (not counting the article URL line)',
+    '- Sound like a real person who actually read this article, not a template',
+    '- Frame the article as something happening in their broader field/specialty, not necessarily at their firm — e.g. "saw this deal in the space and thought of you" or "this caught my eye given what you work on"',
+    '- Connect it lightly to their specific role if natural',
+    '- Low-pressure call to action at the end',
+    '',
+    'SOUND HUMAN — this is critical. The email must read like a real person typed it quickly, not like AI:',
+    '- NEVER use dashes of any kind. No em dashes, no en dashes, no hyphens between words as pauses. This is the #1 giveaway of AI writing. Use a comma, a period, or split into two sentences instead.',
+    '- Avoid corporate or AI-sounding filler like "I hope this email finds you well", "I wanted to reach out", "I came across", "delve", "navigate", "landscape", "in today\'s fast-paced world", "leverage", "resonate".',
+    '- Use natural contractions (I\'m, you\'re, it\'s, didn\'t).',
+    '- Vary sentence length. A short punchy sentence next to a longer one reads human. Perfectly even sentences read like a bot.',
+    '- It is fine to start a sentence with And, But, or So. It is fine to be slightly casual.',
+    '- Do not over-explain or be overly polished. A tiny bit of informality is good.',
+    '- Write like you are messaging a peer you genuinely know, not drafting a press release.',
+    '- Sign off: "' + signoff + ',\n' + myName + '"' + styleBlock,
+    '',
+    subjectInstruction,
+    '',
+    'Return ONLY valid JSON, no markdown fences:',
+    '{"subject": "...", "body": "...", "article_headline": "...", "article_url": "...", "article_source": "..."}'
+  ].join('\n');
+
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!res.ok) throw new Error('API ' + res.status);
+  const data = await res.json();
+  const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  const clean = text.replace(/```json\n?|```/g,'').trim();
+  const result = JSON.parse(clean);
+  // Safety net: strip dashes the model may have slipped in
+  if (result.body)    result.body    = deDash(result.body);
+  if (result.subject) result.subject = deDash(result.subject);
+  result._article = article;
+  return result;
+}
+
+// Remove dash characters that make text read as AI-written.
+// Replaces em/en dashes used as pauses with commas, and tidies spacing.
+// Leaves hyphenated words inside the subject's bracketed tag alone where needed
+// by only targeting dashes surrounded by spaces (pause dashes), plus stray em/en dashes.
+function deDash(s) {
+  if (!s) return s;
+  let out = s;
+  // Em dash and en dash anywhere -> comma (or nothing if already near punctuation)
+  out = out.replace(/\s*[\u2014\u2013]\s*/g, ', ');
+  // Spaced hyphen used as a pause ( word - word ) -> comma
+  out = out.replace(/ - /g, ', ');
+  // Clean doubled punctuation that can result, e.g. ",," or ", ." or " ,"
+  out = out.replace(/,\s*,/g, ',')
+           .replace(/\s+,/g, ',')
+           .replace(/,\s*\./g, '.')
+           .replace(/,\s*$/gm, '.')
+           .replace(/\(\s*,\s*/g, '(');
+  return out;
+}
+
+
+function fallbackEmail(c) {
+  const myName = settings.name || '[Your name]';
+  const signoff = settings.signoff || 'Best';
+  const first = c.firstName || c.name.split(' ')[0];
+  // Build a simple bracketed tag from the most relevant shared signal we have
+  const tag = (c.connection || c.group || c.industry || 'Cornell').trim();
+  const subject = '[' + tag + '] Catching up soon';
+  return {
+    subject: subject,
+    body: 'Hi ' + first + ',\n\nHope you\'re doing well. It\'s been a while and you crossed my mind, so I figured I\'d reach out.\n\nCurious what\'s been keeping you busy at ' + (c.company||'your company') + ' lately. Would love to catch up if you have fifteen minutes sometime soon.\n\n' + signoff + ',\n' + myName,
+    article_headline: '', article_url: '', article_source: '', _article: null
+  };
+}
+
+// ── Queue rendering ────────────────────────────────────────
+function renderQueue() {
+  const tbody = document.getElementById('queue-body');
+  tbody.innerHTML = contacts.map((c, i) => {
+    const [bg, fg] = avatarPalette(i);
+    return `<tr id="row-${c.id}">
+      <td>
+        <div class="name-cell">
+          <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
+          <div>
+            <div class="name">${c.name}</div>
+            <div class="email-sub">${c.title||'—'}</div>
+          </div>
+        </div>
+      </td>
+      <td><span style="font-weight:500;">${c.company||'—'}</span><br><span style="color:var(--text-muted);font-size:12px;">${c.industry||'—'}</span></td>
+      <td id="news-${c.id}" style="color:var(--text-muted);font-size:12px;">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${c.group}</span><br>` : ''}${c.connection||'—'}</td>
+      <td id="status-${c.id}"><span class="status-badge status-pending">Pending</span></td>
+      <td id="action-${c.id}"></td>
+    </tr>`;
+  }).join('');
+}
+
+function setStatus(id, status) {
+  const el = document.getElementById(`status-${id}`);
+  const actionEl = document.getElementById(`action-${id}`);
+  const newsEl = document.getElementById(`news-${id}`);
+  if (!el) return;
+
+  if (status === 'searching') {
+    el.innerHTML = `<span class="status-badge status-writing"><span class="spinner"></span> Searching…</span>`;
+    actionEl.innerHTML = '';
+  } else if (status === 'writing') {
+    el.innerHTML = `<span class="status-badge status-writing"><span class="spinner"></span> Writing…</span>`;
+    actionEl.innerHTML = '';
+  } else if (status === 'done') {
+    el.innerHTML = `<span class="status-badge status-done">✓ Ready</span>`;
+    actionEl.innerHTML = `<button class="btn btn-sm" onclick="openDrawer(${id})">Review ↗</button>`;
+  } else if (status === 'error') {
+    el.innerHTML = `<span class="status-badge status-error">Error</span>`;
+    actionEl.innerHTML = `<button class="btn btn-sm" onclick="retryContact(${id})">Retry</button>`;
+  }
+}
+
+function updateProgress(done, total, label) {
+  const pct = total ? Math.round((done/total)*100) : 0;
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-label').textContent = label;
+  document.getElementById('prog-count').textContent = `${done} / ${total}`;
+}
+
+function updateDoneCount() {
+  const n = Object.keys(emailResults).length;
+  const el = document.getElementById('done-count');
+  el.textContent = `${n} ready`;
+  el.className = n === contacts.length ? 'count-pill done' : 'count-pill';
+}
+
+async function retryContact(id) {
+  const c = contacts.find(x=>x.id===id);
+  if (!c) return;
+  setStatus(id, 'writing');
+  try {
+    emailResults[id] = await generateEmail(c);
+    setStatus(id, 'done');
+  } catch(e) {
+    emailResults[id] = fallbackEmail(c);
+    setStatus(id, 'done');
+  }
+  updateDoneCount();
+}
+
+// ── Drawer ────────────────────────────────────────────────
+function openDrawer(id) {
+  activeDrawerIdx = id;
+  const c = contacts.find(x=>x.id===id);
+  const result = emailResults[id] || {};
+  const i = contacts.indexOf(c);
+  const [bg,fg] = avatarPalette(i);
+
+  const av = document.getElementById('drawer-avatar');
+  av.textContent = initials(c.name);
+  av.style.background = bg; av.style.color = fg;
+  document.getElementById('drawer-name').textContent = c.name;
+  document.getElementById('drawer-subject').value = result.subject || '';
+  document.getElementById('drawer-body').value = result.body || '';
+  const art = result._article;
+  if (art && art.url) {
+    document.getElementById('drawer-news').innerHTML =
+      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;">'
+      + '<div style="font-size:12px;font-weight:500;margin-bottom:3px;">' + (art.headline||result.article_headline||'Article') + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' + (art.source||result.article_source||'') + '</div>'
+      + '<a href="' + (art.url||result.article_url||'#') + '" target="_blank" style="font-size:12px;color:var(--accent);word-break:break-all;">'
+      + (art.url||result.article_url||'') + '</a></div>';
+  } else if (result.article_url) {
+    document.getElementById('drawer-news').innerHTML =
+      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;">'
+      + '<div style="font-size:12px;font-weight:500;margin-bottom:3px;">' + (result.article_headline||'Article') + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' + (result.article_source||'') + '</div>'
+      + '<a href="' + result.article_url + '" target="_blank" style="font-size:12px;color:var(--accent);word-break:break-all;">'
+      + result.article_url + '</a></div>';
+  } else {
+    document.getElementById('drawer-news').innerHTML = '<span style="color:var(--text-muted);font-size:12px;">No article found — generic email generated</span>';
+  }
+  document.getElementById('drawer-meta').innerHTML = [
+    c.group      ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Group</div><div style="font-size:13px;font-weight:500;">${c.group}</div></div>` : '',
+    c.connection ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Connection</div><div style="font-size:13px;font-weight:500;">${c.connection}</div></div>` : '',
+    c.context    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;grid-column:1/-1;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Notes</div><div style="font-size:13px;">${c.context}</div></div>` : '',
+  ].filter(Boolean).join('');
+
+  document.getElementById('drawer').style.display = 'flex';
+}
+
+function closeDrawer(e) { if (e.target === document.getElementById('drawer')) closeDrawerDirect(); }
+function closeDrawerDirect() {
+  // Save edits back
+  if (activeDrawerIdx !== null && emailResults[activeDrawerIdx]) {
+    emailResults[activeDrawerIdx].subject = document.getElementById('drawer-subject').value;
+    emailResults[activeDrawerIdx].body = document.getElementById('drawer-body').value;
+  }
+  document.getElementById('drawer').style.display = 'none';
+  activeDrawerIdx = null;
+}
+
+function copyDrawerEmail() {
+  const subj = document.getElementById('drawer-subject').value;
+  const body = document.getElementById('drawer-body').value;
+  navigator.clipboard.writeText(`Subject: ${subj}\n\n${body}`).then(() => {
+    const btn = event.target;
+    btn.textContent = '✓ Copied'; setTimeout(()=>btn.textContent='⎘ Copy', 2000);
+  });
+}
+
+function openDrawerInGmail() {
+  const c = contacts.find(x=>x.id===activeDrawerIdx);
+  const subj = encodeURIComponent(document.getElementById('drawer-subject').value);
+  const body = encodeURIComponent(document.getElementById('drawer-body').value);
+  const to = encodeURIComponent(c?.email||'');
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subj}&body=${body}`, '_blank');
+}
+
+function openAllInGmail() {
+  if (!confirm(`This will open ${Object.keys(emailResults).length} Gmail compose windows. Your browser may block pop-ups — allow them when prompted.`)) return;
+  contacts.forEach(c => {
+    const result = emailResults[c.id];
+    if (!result) return;
+    const to = encodeURIComponent(c.email||'');
+    const su = encodeURIComponent(result.subject||'');
+    const body = encodeURIComponent(result.body||'');
+    setTimeout(() => window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`, '_blank'), 300);
+  });
+}
+
+// ── Settings ──────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('set-name').value = settings.name || '';
+  document.getElementById('set-profile').value = settings.profile || '';
+  document.getElementById('set-subject-style').value = settings.subjectStyle || '';
+  document.getElementById('set-signoff').value = settings.signoff || 'Best';
+  document.getElementById('set-tone').value = settings.tone || 'warm and casual';
+  document.getElementById('set-style').value = settings.styleExamples || '';
+  document.getElementById('set-length').value = settings.maxLength || 'under 150 words';
+  document.getElementById('modal-settings').style.display = 'flex';
+}
+
+// ── Sent-email zip parsing (style learning) ────────────────
+async function handleEmailZip(file) {
+  if (!file) return;
+  const status = document.getElementById('zip-status');
+  status.style.color = 'var(--text-muted)';
+  status.textContent = 'Reading ' + file.name + '…';
+
+  if (typeof JSZip === 'undefined') {
+    status.style.color = 'var(--danger)';
+    status.textContent = 'Zip library not loaded — check your internet connection and reopen the file.';
+    return;
+  }
+
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const emailTexts = [];
+
+    // Collect candidate files: .eml, .txt, or .mbox inside the zip
+    const entries = [];
+    zip.forEach((path, entry) => {
+      if (entry.dir) return;
+      const lower = path.toLowerCase();
+      if (lower.endsWith('.eml') || lower.endsWith('.txt') || lower.endsWith('.mbox')) {
+        entries.push(entry);
+      }
+    });
+
+    if (!entries.length) {
+      status.style.color = 'var(--danger)';
+      status.textContent = 'No .eml, .txt, or .mbox files found inside the zip.';
+      return;
+    }
+
+    // Read up to a reasonable number of files to keep it fast
+    let processed = 0;
+    for (const entry of entries) {
+      if (emailTexts.length >= 15) break;  // 15 sample emails is plenty for style
+      const raw = await entry.async('string');
+      const lower = entry.name.toLowerCase();
+      if (lower.endsWith('.mbox')) {
+        // An mbox holds many emails separated by lines starting with "From "
+        const messages = raw.split(/^From .*$/m);
+        for (const msg of messages) {
+          const body = extractEmailBody(msg);
+          if (body && body.length > 40) emailTexts.push(body);
+          if (emailTexts.length >= 15) break;
+        }
+      } else {
+        const body = extractEmailBody(raw);
+        if (body && body.length > 40) emailTexts.push(body);
+      }
+      processed++;
+    }
+
+    if (!emailTexts.length) {
+      status.style.color = 'var(--danger)';
+      status.textContent = 'Found files, but could not extract readable email text from them.';
+      return;
+    }
+
+    // Use up to 5 of the cleanest samples as the style reference
+    const samples = emailTexts
+      .map(t => t.trim())
+      .filter(t => t.length > 40 && t.length < 1500)
+      .slice(0, 5);
+
+    const styleText = samples.join('\n\n---\n\n');
+    document.getElementById('set-style').value = styleText;
+
+    status.style.color = 'var(--success)';
+    status.textContent = '✓ Learned your style from ' + emailTexts.length + ' email'
+      + (emailTexts.length !== 1 ? 's' : '') + ' (using ' + samples.length + ' as samples). Click Save to apply.';
+  } catch(e) {
+    status.style.color = 'var(--danger)';
+    status.textContent = 'Could not read that zip: ' + e.message;
+    console.error(e);
+  }
+}
+
+// Pull the human-written body out of a raw email, stripping headers and quoted replies
+function extractEmailBody(raw) {
+  if (!raw) return '';
+  let text = raw;
+
+  // Decode quoted-printable soft breaks and common encodings (lightweight)
+  text = text.replace(/=\r?\n/g, '').replace(/=20/g, ' ').replace(/=E2=80=99/g, "'");
+
+  // Headers end at the first blank line — take everything after
+  const split = text.split(/\r?\n\r?\n/);
+  if (split.length > 1) {
+    text = split.slice(1).join('\n\n');
+  }
+
+  // Strip HTML tags if it's an HTML email
+  if (/<html|<body|<div|<p>/i.test(text)) {
+    text = text.replace(/<style[\s\S]*?<\/style>/gi, '')
+               .replace(/<[^>]+>/g, ' ')
+               .replace(/&nbsp;/g, ' ')
+               .replace(/&amp;/g, '&')
+               .replace(/&quot;/g, '"')
+               .replace(/&#39;/g, "'");
+  }
+
+  // Cut off quoted reply chains — common markers
+  const cutMarkers = [
+    /^On .* wrote:$/m,
+    /^-----Original Message-----/m,
+    /^From: /m,
+    /^________________________________/m,
+    /^>/m
+  ];
+  for (const marker of cutMarkers) {
+    const m = text.match(marker);
+    if (m && m.index > 30) text = text.slice(0, m.index);
+  }
+
+  // Collapse excessive whitespace
+  text = text.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+  return text;
+}
+
+function saveSettings() {
+  settings.name = document.getElementById('set-name').value.trim();
+  settings.profile = document.getElementById('set-profile').value.trim();
+  settings.subjectStyle = document.getElementById('set-subject-style').value.trim();
+  settings.signoff = document.getElementById('set-signoff').value;
+  settings.tone = document.getElementById('set-tone').value;
+  settings.styleExamples = document.getElementById('set-style').value.trim();
+  settings.maxLength = document.getElementById('set-length').value;
+  localStorage.setItem('ne_settings', JSON.stringify(settings));
+  closeModal('modal-settings');
+}
+
+function closeModal(id) { document.getElementById(id).style.display='none'; }
+
+// ── Excel template download ────────────────────────────────
+function downloadTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['First Name','Last Name','Company','Position','Industry','Group','Connection','Notes'],
+    ['Jane','Smith','Acme Corp','VP of Engineering','SaaS','College','Former colleague','Met at SaaStr 2024 — interested in AI tooling'],
+    ['Marcus','Rivera','FintechCo','Head of Partnerships','Fintech','Work','Ex-manager','Worked together at Stripe 2021-2023'],
+    ['Priya','Nair','HealthOS','Chief Medical Officer','Healthcare','Conference','New contact','Met at HLTH conference, wants to connect on digital health'],
+  ]);
+  ws['!cols'] = [{wch:14},{wch:14},{wch:18},{wch:22},{wch:14},{wch:14},{wch:16},{wch:36}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+  XLSX.writeFile(wb, 'network-emailer-contacts.xlsx');
+}
+
+// ── Reset ─────────────────────────────────────────────────
+function resetApp() {
+  if (processing && !confirm('Stop generating and start over?')) return;
+  processing = false;
+  contacts = []; allContacts = []; emailResults = {}; activeDrawerIdx = null;
+  selectedIds = new Set();
+  activeFirmFilter = null; activeIndustryFilter = null;
+  document.getElementById('upload-section').style.display = 'block';
+  document.getElementById('selection-section').style.display = 'none';
+  document.getElementById('mbox-review-section').style.display = 'none';
+  document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  const mboxInput = document.getElementById('mbox-input');
+  if (mboxInput) mboxInput.value = '';
+  mboxRows = []; mboxInclude = new Set();
+  const search = document.getElementById('sel-search');
+  if (search) search.value = '';
+}
+</script>
+</body>
+</html>

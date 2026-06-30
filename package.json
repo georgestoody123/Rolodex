@@ -1,0 +1,20 @@
+{
+  "name": "network-emailer-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Network Emailer with a small backend that hides the Anthropic API key",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-basic-auth": "^1.2.1",
+    "express-rate-limit": "^7.4.0"
+  }
+}
