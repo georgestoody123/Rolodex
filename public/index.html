@@ -170,8 +170,21 @@
       <p>Upload contacts → AI writes personalized emails automatically</p>
     </div>
     <div class="header-right">
+      <span id="auth-area"></span>
       <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Settings</button>
       <button class="btn btn-sm" onclick="downloadTemplate()">⬇ Excel template</button>
+    </div>
+  </div>
+
+  <!-- Google sign-in prompt (shown only when sending is enabled and you're signed out) -->
+  <div id="signin-banner" style="display:none;border:1px solid var(--accent-border);background:var(--accent-bg);border-radius:12px;padding:14px 16px;margin-bottom:1.25rem;">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:18px;">🔐</span>
+      <div style="flex:1;min-width:200px;">
+        <div style="font-weight:600;font-size:14px;">Sign in with Google to send emails from your Gmail</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">You can browse and generate drafts either way, but sending requires sign-in. We only ever use this to send the emails you approve.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="signInWithGoogle()">Sign in with Google</button>
     </div>
   </div>
 
@@ -411,7 +424,8 @@
     </div>
     <div class="drawer-footer">
       <button class="btn btn-sm" onclick="copyDrawerEmail()">⎘ Copy</button>
-      <button class="btn btn-primary btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
+      <button class="btn btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
+      <button class="btn btn-primary btn-sm" id="drawer-send-btn" onclick="sendDrawerViaGmail()">✆ Send via Gmail</button>
     </div>
   </div>
 </div>
@@ -567,6 +581,91 @@ let emailResults = {};
 let settings = JSON.parse(localStorage.getItem('ne_settings') || '{}');
 let activeDrawerIdx = null;
 let processing = false;
+
+// ── Google sign-in state ───────────────────────────────────
+let googleEnabled = false;   // does the backend have Gmail sending configured?
+let currentUser = null;      // { email, name } when signed in, else null
+
+// Ask the backend whether sending is available and who (if anyone) is signed in.
+async function refreshAuth() {
+  try {
+    const res = await fetch('/api/me');
+    const data = await res.json();
+    googleEnabled = !!data.googleEnabled;
+    currentUser = data.user || null;
+  } catch(e) {
+    googleEnabled = false; currentUser = null;
+  }
+  renderAuth();
+}
+
+function renderAuth() {
+  const area = document.getElementById('auth-area');
+  const banner = document.getElementById('signin-banner');
+  // The drawer's "Send via Gmail" button only makes sense when sending is on.
+  const sendBtn = document.getElementById('drawer-send-btn');
+  if (sendBtn) sendBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
+  // If the backend has no Gmail sending configured, hide all sign-in UI.
+  if (!googleEnabled) {
+    if (area) area.innerHTML = '';
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  if (currentUser) {
+    if (area) area.innerHTML =
+      `<span style="font-size:12px;color:var(--text-secondary);margin-right:6px;">✅ ${currentUser.email}</span>`
+      + `<button class="btn btn-ghost btn-sm" onclick="signOut()">Sign out</button>`;
+    if (banner) banner.style.display = 'none';
+  } else {
+    if (area) area.innerHTML =
+      `<button class="btn btn-primary btn-sm" onclick="signInWithGoogle()">Sign in with Google</button>`;
+    if (banner) banner.style.display = 'block';
+  }
+}
+
+function signInWithGoogle() { window.location.href = '/auth/google'; }
+
+async function signOut() {
+  try { await fetch('/auth/logout', { method: 'POST' }); } catch(e) {}
+  currentUser = null;
+  renderAuth();
+}
+
+// Send the currently-open drawer email through the signed-in user's Gmail.
+async function sendDrawerViaGmail() {
+  if (!currentUser) {
+    if (confirm('You need to sign in with Google to send. Sign in now?')) signInWithGoogle();
+    return;
+  }
+  const c = contacts.find(x => x.id === activeDrawerIdx);
+  if (!c) return;
+  if (!c.email) { alert('This contact has no email address, so it cannot be sent.'); return; }
+  const subject = document.getElementById('drawer-subject').value;
+  const body = document.getElementById('drawer-body').value;
+  if (!confirm(`Send this email now from ${currentUser.email} to ${c.email}?`)) return;
+
+  const btn = document.getElementById('drawer-send-btn');
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res = await fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: c.email, subject, body })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+    // Mark this contact as sent in the queue.
+    if (emailResults[c.id]) emailResults[c.id]._sent = true;
+    const statusEl = document.getElementById(`status-${c.id}`);
+    if (statusEl) statusEl.innerHTML = '<span class="status-badge status-done">✓ Sent</span>';
+    btn.textContent = '✓ Sent';
+    setTimeout(() => { closeDrawerDirect(); }, 700);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = original;
+    alert('Could not send: ' + e.message);
+  }
+}
 
 // ── File handling ──────────────────────────────────────────
 function handleDrop(e) {
@@ -1961,6 +2060,10 @@ function resetApp() {
   const search = document.getElementById('sel-search');
   if (search) search.value = '';
 }
+
+// ── Startup ───────────────────────────────────────────────
+// Find out whether Gmail sending is available and whether we're signed in.
+refreshAuth();
 </script>
 </body>
 </html>
