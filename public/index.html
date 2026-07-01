@@ -62,6 +62,7 @@
   .reason-biz { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
   .reason-work { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
   .reason-freq { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border-strong); }
+  .reason-thanked { background: rgba(197,162,83,0.16); color: var(--gold, #c5a253); border: 1px solid rgba(197,162,83,0.5); font-weight:600; }
   .collapse-section { border-bottom: 1px solid var(--border); }
   .collapse-section:last-child { border-bottom: none; }
   .collapse-header { width: 100%; text-align: left; background: transparent; border: none; cursor: pointer; font-family: inherit;
@@ -298,7 +299,10 @@
         <span class="count-pill" id="mbox-review-count">0 selected</span>
         <button class="btn btn-sm" onclick="mboxSelectAll(true)">Select all shown</button>
         <button class="btn btn-sm" onclick="mboxSelectAll(false)">Deselect all shown</button>
-        <button class="btn btn-sm" id="clean-firms-btn" onclick="cleanUpFirmNames()">🔎 Clean up firm names</button>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="clean-firms-toggle" onchange="onCleanFirmsToggle(this.checked)" style="width:15px;height:15px;cursor:pointer;" />
+          🔎 Clean up firm names<span id="clean-firms-status" style="color:var(--accent);"></span>
+        </label>
         <div style="margin-left:auto;">
           <button class="btn btn-primary btn-sm" id="mbox-continue-btn" onclick="confirmMboxContacts()" disabled>Continue to selection →</button>
         </div>
@@ -1064,6 +1068,30 @@ const BUSINESS_KEYWORDS = [
   'real estate','m&a','ipo','pitch','diligence','acquisition','transaction'
 ];
 
+// A "thank-you" note you sent AFTER speaking with someone is the strongest
+// signal that you actually corresponded with them (met, called, or coffee-chatted,
+// then followed up). These are specific follow-up phrases, deliberately NOT the
+// bare word "thanks" (which is just an email sign-off and would match everything).
+const THANKS_PHRASES = [
+  'thank you for taking the time','thanks for taking the time','thank you for your time','thanks for your time',
+  'thanks for chatting','thanks for the chat','thanks for the call','thank you for the call','thank you for chatting',
+  'thanks for hopping on','thanks for meeting','thank you for meeting','thanks for meeting with me',
+  'great speaking with you','great to connect','great connecting','great talking with you','great to chat',
+  'great to meet','nice to connect','nice speaking with you','lovely to connect','wonderful to connect',
+  'appreciate you taking the time','appreciate your time','appreciate you speaking','thank you for speaking',
+  'thanks for speaking','thanks so much for','thank you so much for','really appreciated'
+];
+
+// Decide whether a sent message is a genuine thank-you / follow-up note.
+// A thank-you SUBJECT line counts (e.g. "Thank you", "Thanks for your time"),
+// as do the specific follow-up phrases anywhere in subject+body.
+function isThankYouMessage(subject, body) {
+  const s = (subject || '').toLowerCase();
+  if (/\bthank you\b|\bthanks\b|\bthank you!/.test(s)) return true;
+  const text = ((subject || '') + ' ' + (body || '')).toLowerCase();
+  return THANKS_PHRASES.some(p => text.includes(p));
+}
+
 // Scan a lowercased text blob and return which keywords from a list it contains
 function matchesAny(textLower, list) {
   const hits = [];
@@ -1090,6 +1118,7 @@ function processMboxMessage(msg, byEmail) {
 
   const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
+  const thanked = isThankYouMessage(subject, bodySnippet);
 
   for (const r of parseAddresses(toLine)) {
     if (!r.email) continue;
@@ -1097,10 +1126,11 @@ function processMboxMessage(msg, byEmail) {
     if (isNoise(key)) continue;
     if (!byEmail[key]) {
       byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
-                       netHits: new Set(), bizHits: new Set() };
+                       netHits: new Set(), bizHits: new Set(), thanked: 0 };
     }
     const rec = byEmail[key];
     rec.count++;
+    if (thanked) rec.thanked++;
     if (r.name && (!rec.name || rec.name.length < r.name.length)) rec.name = r.name;
     const d = dateStr ? new Date(dateStr) : null;
     if (d && !isNaN(d) && (!rec.lastDate || d > rec.lastDate)) rec.lastDate = d;
@@ -1122,6 +1152,7 @@ function processGmailMessage(msg, byEmail) {
 
   const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
+  const thanked = isThankYouMessage(subject, msg.body || '');
 
   for (const r of parseAddresses(toLine)) {
     if (!r.email) continue;
@@ -1129,10 +1160,11 @@ function processGmailMessage(msg, byEmail) {
     if (isNoise(key)) continue;
     if (!byEmail[key]) {
       byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
-                       netHits: new Set(), bizHits: new Set() };
+                       netHits: new Set(), bizHits: new Set(), thanked: 0 };
     }
     const rec = byEmail[key];
     rec.count++;
+    if (thanked) rec.thanked++;
     if (r.name && (!rec.name || rec.name.length < r.name.length)) rec.name = r.name;
     const d = dateStr ? new Date(dateStr) : null;
     if (d && !isNaN(d) && (!rec.lastDate || d > rec.lastDate)) rec.lastDate = d;
@@ -1205,33 +1237,40 @@ function finalizeMboxRows(byEmail) {
     const company = inferCompanyFromEmail(rec.email);
     const hasBizDomain = !!company;  // non-personal domain => likely works at a firm
 
-    // Relevance score: weight networking intent, business topics, business domain, and frequency.
-    // Stricter model: frequency alone is NOT enough. A contact needs a genuine business
-    // signal (coffee-chat language, business topic, or a work email domain) to score well.
+    // Relevance score. Strongest signal: a thank-you / follow-up note you SENT
+    // (means you actually met or spoke, then thanked them). Then coffee-chat
+    // language and business topics. A work email domain is a weak booster only.
+    const thanked = (rec.thanked || 0) > 0;
     const netHit = rec.netHits.size > 0;
     const bizHit = rec.bizHits.size > 0;
     const strongNet = rec.netHits.size >= 2;   // multiple scheduling/coffee phrases = clearly networking
     const strongBiz = rec.bizHits.size >= 2;   // multiple business terms = clearly business
 
     let score = 0;
+    if (thanked)      score += 6;            // you thanked them after speaking — the clearest sign
+    if (rec.thanked >= 2) score += 1;        // thanked more than once
     if (netHit)       score += 3;            // asked about availability / coffee chat / scheduling
     if (strongNet)    score += 1;            // extra weight for repeated networking language
     if (bizHit)       score += 2;            // discussed firm / role / deal / business topic
     if (strongBiz)    score += 1;
-    if (hasBizDomain) score += 3;            // corporate email domain (raised from 2)
+    if (hasBizDomain) score += 1;            // corporate email domain (booster only now, not a gate)
     if (rec.count >= 5) score += 1; else if (rec.count >= 3) score += 0.5;  // frequency is a minor nudge only
 
-    // Hard gate: with no business signal at all, force the score to 0 no matter how often emailed.
-    // This stops friends/family you email constantly from being added.
-    const hasAnyBizSignal = netHit || bizHit || hasBizDomain;
-    if (!hasAnyBizSignal) score = 0;
+    // Stricter hard gate: a real conversational signal is now required. A work
+    // email domain ALONE (a recruiter blast, a vendor, a one-off reply) is no
+    // longer enough — the person must have been thanked, shown coffee-chat
+    // language, or discussed a business topic. This filters out non-business
+    // contacts much more aggressively than before.
+    const hasRealSignal = thanked || netHit || bizHit;
+    if (!hasRealSignal) score = 0;
 
     // Human-readable reasons for why this person was flagged as business-relevant
     const reasons = [];
+    if (thanked)      reasons.push('thanked');
     if (netHit)       reasons.push('coffee chat');
     if (bizHit)       reasons.push('business topic');
-    if (hasBizDomain) reasons.push('work email');
-    if (hasAnyBizSignal && rec.count >= 3) reasons.push(rec.count + '× emailed');
+    if (hasRealSignal && hasBizDomain) reasons.push('work email');
+    if (hasRealSignal && rec.count >= 3) reasons.push(rec.count + '× emailed');
 
     return {
       firstName: first,
@@ -1241,10 +1280,11 @@ function finalizeMboxRows(byEmail) {
       title: '',
       industry: '',
       group: '',
-      connection: netHit ? 'Networking / coffee chat'
+      connection: thanked ? 'Corresponded & thanked'
+                 : (netHit ? 'Networking / coffee chat'
                  : (bizHit ? 'Business contact'
                  : (rec.count >= 5 ? 'Frequent contact'
-                 : (rec.count >= 2 ? 'Occasional contact' : 'Emailed once'))),
+                 : (rec.count >= 2 ? 'Occasional contact' : 'Emailed once')))),
       context: 'You have emailed ' + rec.count + ' time' + (rec.count !== 1 ? 's' : '')
         + (rec.lastDate ? ', last on ' + rec.lastDate.toLocaleDateString() : '')
         + (rec.subjects.length ? '. Recent subjects: ' + rec.subjects.join('; ') : ''),
@@ -1360,18 +1400,21 @@ let mboxInclude = new Set();
 
 function showMboxReview(rows) {
   mboxRows = rows;
-  // Pre-include only people with a STRONG business signal. Threshold raised to 5,
-  // which needs e.g. a work email plus a business topic, or clear coffee-chat language.
-  // A single weak signal alone will not auto-select someone.
+  // Pre-include only genuine networking contacts. Anyone you sent a thank-you /
+  // follow-up note to is auto-selected (score >= 6 guarantees this); otherwise
+  // a high combined signal (coffee-chat + business topic, etc.) is required.
   mboxInclude = new Set();
-  rows.forEach((r, i) => { if (r._score >= 5) mboxInclude.add(i); });
+  rows.forEach((r, i) => { if (r._score >= 6) mboxInclude.add(i); });
 
   showTab('contacts');
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('mbox-review-section').style.display = 'block';
+  const thankedCount = rows.filter(r => (r._reasons || []).includes('thanked')).length;
   document.getElementById('mbox-review-sub').textContent =
-    'Found ' + rows.length + ' people you have emailed. The app pre-selected only those with strong business signals (work email domains, coffee-chat language like "availability" or "schedule", and business topics). Frequency alone no longer counts. The tags show why each was flagged. Check anyone the app missed, uncheck anyone who does not belong, and fix company names, then continue.';
+    'Found ' + rows.length + ' people you have emailed. The app pre-selected genuine networking contacts only — led by the '
+    + thankedCount + ' people you sent a thank-you or follow-up note to (tagged "thanked"), then those with clear coffee-chat language or business topics. A work email address alone is no longer enough, so casual and one-off contacts are filtered out. The tags show why each was flagged. Check anyone the app missed, uncheck anyone who does not belong, fix company names, then continue.';
   renderMboxReview();
+  maybeAutoCleanFirms();
 }
 
 function renderMboxReview() {
@@ -1386,7 +1429,8 @@ function renderMboxReview() {
     const fullName = [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email;
     const checked = mboxInclude.has(i) ? 'checked' : '';
     const reasonChips = (r._reasons || []).map(reason => {
-      const cls = reason === 'coffee chat' ? 'reason-coffee'
+      const cls = reason === 'thanked' ? 'reason-thanked'
+                : reason === 'coffee chat' ? 'reason-coffee'
                 : reason === 'business topic' ? 'reason-biz'
                 : reason === 'work email' ? 'reason-work' : 'reason-freq';
       return `<span class="reason-chip ${cls}">${reason}</span>`;
@@ -1429,9 +1473,25 @@ function mboxSelectAll(on) {
   renderMboxReview();
 }
 
+// Remembered preference for auto-cleaning firm names on each import.
+function onCleanFirmsToggle(checked) {
+  localStorage.setItem('ne_autocleanfirms', checked ? '1' : '0');
+  if (checked) cleanUpFirmNames();
+}
+
+// On a fresh review screen, restore the toggle state and auto-run if it's on.
+function maybeAutoCleanFirms() {
+  const on = localStorage.getItem('ne_autocleanfirms') === '1';
+  const toggle = document.getElementById('clean-firms-toggle');
+  if (toggle) toggle.checked = on;
+  if (on) cleanUpFirmNames();
+}
+
 // ── Verify & clean firm names via web search (needs live connection) ──
 async function cleanUpFirmNames() {
-  const btn = document.getElementById('clean-firms-btn');
+  const toggle = document.getElementById('clean-firms-toggle');
+  const status = document.getElementById('clean-firms-status');
+  const setStatus = (t) => { if (status) status.textContent = t; };
 
   // Gather unique non-empty firm names currently on the rows
   const firmSet = new Set();
@@ -1461,9 +1521,8 @@ async function cleanUpFirmNames() {
     return;
   }
 
-  btn.disabled = true;
-  const originalLabel = btn.textContent;
-  btn.textContent = '🔎 Checking firms…';
+  if (toggle) toggle.disabled = true;
+  setStatus(' · checking…');
 
   try {
     // Re-collect after local fixes
@@ -1520,8 +1579,8 @@ async function cleanUpFirmNames() {
     alert('Applied ' + localFixed + ' known firm corrections, but the web verification step failed: '
       + e.message + '. You can still edit any name by hand.');
   } finally {
-    btn.disabled = false;
-    btn.textContent = originalLabel;
+    if (toggle) toggle.disabled = false;
+    setStatus('');
   }
 }
 
