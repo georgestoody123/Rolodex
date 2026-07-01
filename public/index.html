@@ -375,13 +375,16 @@
       <div class="queue-header">
         <h2>Email queue</h2>
         <span class="count-pill" id="done-count">0 ready</span>
-        <div style="margin-left:auto;display:flex;gap:6px;">
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+          <span id="bulk-progress" style="font-size:12px;color:var(--text-muted);"></span>
           <button class="btn btn-sm" id="open-all-btn" onclick="openAllInGmail()" disabled>Open all in Gmail ↗</button>
+          <button class="btn btn-primary btn-sm" id="send-approved-btn" onclick="sendApproved()" disabled>✆ Send approved →</button>
         </div>
       </div>
       <table class="contact-table">
         <thead>
           <tr>
+            <th style="width:52px;">Send</th>
             <th>Contact</th>
             <th>Company &amp; industry</th>
             <th>Group · Connection</th>
@@ -602,9 +605,11 @@ async function refreshAuth() {
 function renderAuth() {
   const area = document.getElementById('auth-area');
   const banner = document.getElementById('signin-banner');
-  // The drawer's "Send via Gmail" button only makes sense when sending is on.
+  // The send buttons only make sense when sending is configured.
   const sendBtn = document.getElementById('drawer-send-btn');
   if (sendBtn) sendBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
+  const bulkBtn = document.getElementById('send-approved-btn');
+  if (bulkBtn) bulkBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
   // If the backend has no Gmail sending configured, hide all sign-in UI.
   if (!googleEnabled) {
     if (area) area.innerHTML = '';
@@ -659,6 +664,8 @@ async function sendDrawerViaGmail() {
     if (emailResults[c.id]) emailResults[c.id]._sent = true;
     const statusEl = document.getElementById(`status-${c.id}`);
     if (statusEl) statusEl.innerHTML = '<span class="status-badge status-done">✓ Sent</span>';
+    const appr = document.getElementById(`approve-${c.id}`);
+    if (appr) { appr.checked = false; appr.disabled = true; }
     btn.textContent = '✓ Sent';
     setTimeout(() => { closeDrawerDirect(); }, 700);
   } catch(e) {
@@ -1734,6 +1741,9 @@ function renderQueue() {
   tbody.innerHTML = contacts.map((c, i) => {
     const [bg, fg] = avatarPalette(i);
     return `<tr id="row-${c.id}">
+      <td style="text-align:center;">
+        <input type="checkbox" id="approve-${c.id}" disabled title="${c.email ? 'Approve to send' : 'No email address on file'}" style="width:16px;height:16px;cursor:pointer;" />
+      </td>
       <td>
         <div class="name-cell">
           <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
@@ -1766,6 +1776,12 @@ function setStatus(id, status) {
   } else if (status === 'done') {
     el.innerHTML = `<span class="status-badge status-done">✓ Ready</span>`;
     actionEl.innerHTML = `<button class="btn btn-sm" onclick="openDrawer(${id})">Review ↗</button>`;
+    // Auto-approve ready emails that have a recipient, and enable bulk send.
+    const appr = document.getElementById(`approve-${id}`);
+    const c = contacts.find(x => x.id === id);
+    if (appr && c && c.email) { appr.disabled = false; appr.checked = true; }
+    const sab = document.getElementById('send-approved-btn');
+    if (sab && googleEnabled) sab.disabled = false;
   } else if (status === 'error') {
     el.innerHTML = `<span class="status-badge status-error">Error</span>`;
     actionEl.innerHTML = `<button class="btn btn-sm" onclick="retryContact(${id})">Retry</button>`;
@@ -1879,6 +1895,63 @@ function openAllInGmail() {
     const body = encodeURIComponent(result.body||'');
     setTimeout(() => window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`, '_blank'), 300);
   });
+}
+
+// Send every approved (checked), ready, not-yet-sent email in one go,
+// straight from the signed-in user's Gmail. Sends one at a time with a small
+// pause so we stay gentle on Gmail's rate limits and can show live progress.
+async function sendApproved() {
+  if (!googleEnabled) return;
+  if (!currentUser) {
+    if (confirm('You need to sign in with Google to send. Sign in now?')) signInWithGoogle();
+    return;
+  }
+  const targets = contacts.filter(c => {
+    const appr = document.getElementById(`approve-${c.id}`);
+    const r = emailResults[c.id];
+    return appr && appr.checked && !appr.disabled && r && !r._sent && c.email;
+  });
+  if (!targets.length) {
+    alert('No approved emails to send. Tick the "Send" boxes on the ready rows first (ready emails are ticked automatically).');
+    return;
+  }
+  if (!confirm(`Send ${targets.length} email${targets.length!==1?'s':''} now from ${currentUser.email}?\n\nEach goes to the address on that contact. You can still edit any draft first via "Review".`)) return;
+
+  const btn = document.getElementById('send-approved-btn');
+  const openBtn = document.getElementById('open-all-btn');
+  const prog = document.getElementById('bulk-progress');
+  btn.disabled = true; openBtn.disabled = true;
+
+  let sent = 0, failed = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const c = targets[i];
+    const r = emailResults[c.id];
+    prog.textContent = `Sending ${i+1} of ${targets.length}…`;
+    const statusEl = document.getElementById(`status-${c.id}`);
+    if (statusEl) statusEl.innerHTML = `<span class="status-badge status-writing"><span class="spinner"></span> Sending…</span>`;
+    try {
+      const res = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: c.email, subject: r.subject || '', body: r.body || '' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+      r._sent = true; sent++;
+      if (statusEl) statusEl.innerHTML = `<span class="status-badge status-done">✓ Sent</span>`;
+      const appr = document.getElementById(`approve-${c.id}`);
+      if (appr) { appr.checked = false; appr.disabled = true; }
+    } catch(e) {
+      failed++;
+      const safe = (e.message || 'failed').replace(/"/g, '');
+      if (statusEl) statusEl.innerHTML = `<span class="status-badge status-error" title="${safe}">✗ Failed</span>`;
+    }
+    await sleep(400);  // gentle pacing between sends
+  }
+
+  prog.textContent = `Done: ${sent} sent${failed ? ', ' + failed + ' failed' : ''}.`;
+  btn.disabled = false; openBtn.disabled = false;
+  if (failed) alert(`Sent ${sent}. ${failed} could not be sent — hover the red "Failed" badges to see why, then use "Review" to retry those individually.`);
 }
 
 // ── Settings ──────────────────────────────────────────────
