@@ -229,6 +229,20 @@
 
   <!-- Upload section -->
   <div id="upload-section">
+
+    <!-- Direct Gmail import (shown when signed in) -->
+    <div id="gmail-import-card" style="display:none;border:1px solid var(--accent-border);background:var(--accent-bg);border-radius:12px;padding:16px 18px;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <span style="font-size:20px;">📥</span>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-weight:600;font-size:15px;">Build your list straight from Gmail</div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Scans your Sent folder and pulls out the people you've emailed — no download needed. We only read it to find contacts; nothing is stored except the list you build.</div>
+          <div id="gmail-import-progress" style="display:none;font-size:12px;color:var(--accent);margin-top:8px;"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="gmail-import-btn" onclick="importFromGmail()">Import from my Gmail</button>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
 
       <!-- Path A: Excel -->
@@ -633,7 +647,9 @@ Return ONLY valid JSON, no markdown, no explanation:
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      // Haiku is much cheaper than Sonnet and plenty capable for the article
+      // lookup step; the email-writing step still uses Sonnet for quality.
+      model: 'claude-haiku-4-5',
       max_tokens: 500,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{ role: 'user', content: searchPrompt }]
@@ -811,6 +827,9 @@ function renderAuth() {
   if (sendBtn) sendBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
   const bulkBtn = document.getElementById('send-approved-btn');
   if (bulkBtn) bulkBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
+  // The Gmail import needs a signed-in account with read access.
+  const importCard = document.getElementById('gmail-import-card');
+  if (importCard) importCard.style.display = (googleEnabled && currentUser) ? 'block' : 'none';
 
   const el = document.getElementById('login-content');
   const loginTabBtn = document.getElementById('tab-btn-login');
@@ -1088,6 +1107,94 @@ function processMboxMessage(msg, byEmail) {
     if (subject && rec.subjects.length < 3) rec.subjects.push(subject.replace(/^(Re|Fwd):\s*/i, ''));
     netHits.forEach(h => rec.netHits.add(h));
     bizHits.forEach(h => rec.bizHits.add(h));
+  }
+}
+
+// Aggregate one message from the Gmail API import (structured headers + body)
+// into the same byEmail shape processMboxMessage builds, so the scoring,
+// finalize, and review steps are shared with the file-upload path.
+function processGmailMessage(msg, byEmail) {
+  const toLine = [msg.to, msg.cc].filter(Boolean).join(', ');
+  if (!toLine) return;
+  const subject = msg.subject || '';
+  const dateStr = msg.date || '';
+  const scanText = (subject + ' ' + (msg.body || '').slice(0, 2000)).toLowerCase();
+
+  const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
+  const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
+
+  for (const r of parseAddresses(toLine)) {
+    if (!r.email) continue;
+    const key = r.email.toLowerCase();
+    if (isNoise(key)) continue;
+    if (!byEmail[key]) {
+      byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
+                       netHits: new Set(), bizHits: new Set() };
+    }
+    const rec = byEmail[key];
+    rec.count++;
+    if (r.name && (!rec.name || rec.name.length < r.name.length)) rec.name = r.name;
+    const d = dateStr ? new Date(dateStr) : null;
+    if (d && !isNaN(d) && (!rec.lastDate || d > rec.lastDate)) rec.lastDate = d;
+    if (subject && rec.subjects.length < 3) rec.subjects.push(subject.replace(/^(Re|Fwd):\s*/i, ''));
+    netHits.forEach(h => rec.netHits.add(h));
+    bizHits.forEach(h => rec.bizHits.add(h));
+  }
+}
+
+// Scan the whole Sent folder via the backend Gmail API, page by page, then
+// hand the results to the same review screen the file-upload path uses.
+async function importFromGmail() {
+  if (!currentUser) {
+    if (confirm('You need to sign in with Google first. Sign in now?')) signInWithGoogle();
+    return;
+  }
+  const btn = document.getElementById('gmail-import-btn');
+  const prog = document.getElementById('gmail-import-progress');
+  btn.disabled = true;
+  prog.style.display = 'block';
+  prog.textContent = 'Starting scan of your Sent folder…';
+
+  const byEmail = {};
+  let pageToken = null, scanned = 0;
+  try {
+    do {
+      const res = await fetch('/api/import-gmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageToken })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // Read permission not granted yet → send them through re-consent.
+        if (res.status === 403 || (data.error && data.error.message === 'NEED_READ_SCOPE')) {
+          btn.disabled = false; prog.style.display = 'none';
+          if (confirm('To scan your Gmail, Google needs you to grant read access. You\'ll see an approval screen — check every box. Continue?')) {
+            signInWithGoogle();
+          }
+          return;
+        }
+        throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+      }
+      (data.messages || []).forEach(m => { processGmailMessage(m, byEmail); scanned++; });
+      pageToken = data.nextPageToken;
+      prog.textContent = 'Scanning your sent mail… ' + scanned + ' emails read'
+        + (pageToken ? ' (still going…)' : ' — done');
+      await sleep(0);  // let the progress text repaint
+    } while (pageToken);
+
+    const rows = finalizeMboxRows(byEmail);
+    prog.style.display = 'none';
+    btn.disabled = false;
+    if (!rows.length) {
+      alert('Scanned ' + scanned + ' sent emails but found no recipients to add.');
+      return;
+    }
+    showMboxReview(rows);  // reuse the existing select / clean-up / continue screen
+  } catch(e) {
+    prog.style.display = 'none';
+    btn.disabled = false;
+    alert('Could not scan Gmail: ' + e.message);
   }
 }
 

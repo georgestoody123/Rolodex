@@ -199,6 +199,30 @@ app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
   }
 });
 
+// ── Scan the signed-in user's Sent mail to build a contact list ───
+// The frontend calls this repeatedly, passing back the nextPageToken, until
+// nextPageToken is null (the whole account has been scanned).
+app.post('/api/import-gmail', requireAuth, hourlyLimit(1000), async (req, res) => {
+  try {
+    const refreshToken = await db.getUserRefreshToken(req.session.user.sub);
+    if (!refreshToken) {
+      return res.status(401).json({ error: { message: 'No Gmail authorization on file. Please sign in again.' } });
+    }
+    const { pageToken } = req.body || {};
+    const { messages, nextPageToken } = await googleHelper.listSentPage({ refreshToken, pageToken });
+    res.json({ messages, nextPageToken });
+  } catch (e) {
+    console.error('Gmail import failed:', e.message);
+    // A missing read scope surfaces as a 403 / "insufficient" error — tell the
+    // frontend to send the user through re-consent to grant read access.
+    const msg = e.message || '';
+    if (/insufficient|scope|permission|forbidden|403|invalid_grant/i.test(msg)) {
+      return res.status(403).json({ error: { message: 'NEED_READ_SCOPE' } });
+    }
+    res.status(500).json({ error: { message: 'Could not read Gmail: ' + msg } });
+  }
+});
+
 // ── Per-user profile (name, background, tone, writing style) ──────
 app.get('/api/profile', requireAuth, async (req, res) => {
   try {

@@ -11,11 +11,13 @@ const { google } = require('googleapis');
 // What we ask each user to grant:
 //  - openid/email/profile: so we know who they are (this doubles as login)
 //  - gmail.send: permission to send mail on their behalf (restricted scope)
+//  - gmail.readonly: read their Sent mail so we can build a contact list from it
 const SCOPES = [
   'openid',
   'email',
   'profile',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.readonly',
 ];
 
 function oauthClient(redirectUri) {
@@ -34,6 +36,9 @@ function authUrl(redirectUri, state) {
     access_type: 'offline',
     prompt: 'consent',
     scope: SCOPES,
+    // Add newly-requested scopes to any the user already granted, so existing
+    // send-only users keep send access when they approve read access.
+    include_granted_scopes: true,
     state,
   });
 }
@@ -96,4 +101,80 @@ async function sendEmail({ refreshToken, fromEmail, to, subject, body }) {
   return res.data;
 }
 
-module.exports = { authUrl, exchangeCode, sendEmail };
+// ── Reading Sent mail to build a contact list ─────────────────────
+// Run an async mapper over items with bounded concurrency (keeps us within
+// Gmail's rate limits and avoids opening hundreds of requests at once).
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let i = 0;
+  async function worker() {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+function headerValue(headers, name) {
+  const h = (headers || []).find(x => x.name.toLowerCase() === name.toLowerCase());
+  return h ? h.value : '';
+}
+
+// Walk a Gmail message payload and pull out a plain-text body snippet.
+function extractBodyText(payload) {
+  if (!payload) return '';
+  // Prefer a text/plain part; fall back to the message-level snippet handled by caller.
+  const stack = [payload];
+  while (stack.length) {
+    const part = stack.shift();
+    if (part.mimeType === 'text/plain' && part.body && part.body.data) {
+      try {
+        return Buffer.from(part.body.data, 'base64').toString('utf8');
+      } catch (e) { /* ignore decode errors */ }
+    }
+    if (part.parts) stack.push(...part.parts);
+  }
+  return '';
+}
+
+// Turn one raw Gmail message into the compact shape the frontend aggregates.
+function extractGmailMessage(data) {
+  const headers = (data.payload && data.payload.headers) || [];
+  const bodyFull = extractBodyText(data.payload);
+  const body = (bodyFull || data.snippet || '').slice(0, 2000);
+  return {
+    to: headerValue(headers, 'To'),
+    cc: headerValue(headers, 'Cc'),
+    subject: headerValue(headers, 'Subject'),
+    date: headerValue(headers, 'Date'),
+    body,
+  };
+}
+
+// Fetch one page (~100 messages) of the user's Sent folder, with headers +
+// a body snippet for each. Returns the parsed messages and a nextPageToken
+// (null when there are no more pages — i.e. the whole account has been scanned).
+async function listSentPage({ refreshToken, pageToken }) {
+  const client = oauthClient();
+  client.setCredentials({ refresh_token: refreshToken });
+  const gmail = google.gmail({ version: 'v1', auth: client });
+
+  const listRes = await gmail.users.messages.list({
+    userId: 'me',
+    labelIds: ['SENT'],
+    maxResults: 100,
+    pageToken: pageToken || undefined,
+  });
+  const ids = (listRes.data.messages || []).map(m => m.id);
+
+  const messages = await mapLimit(ids, 10, async (id) => {
+    const msg = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
+    return extractGmailMessage(msg.data);
+  });
+
+  return { messages, nextPageToken: listRes.data.nextPageToken || null };
+}
+
+module.exports = { authUrl, exchangeCode, sendEmail, listSentPage };
