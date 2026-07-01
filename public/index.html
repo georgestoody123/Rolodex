@@ -206,7 +206,6 @@
       <p>Private networking · impeccably written</p>
     </div>
     <div class="header-right">
-      <button class="btn btn-ghost btn-sm" onclick="openSettings()">Settings</button>
       <button class="btn btn-sm" onclick="downloadTemplate()">Excel template</button>
     </div>
   </div>
@@ -214,6 +213,7 @@
   <!-- Tab navigation -->
   <div class="tabs">
     <button class="tab active" id="tab-btn-login" onclick="showTab('login')">Login</button>
+    <button class="tab" id="tab-btn-profile" onclick="showTab('profile')">Profile</button>
     <button class="tab" id="tab-btn-contacts" onclick="showTab('contacts')">Contacts</button>
     <button class="tab" id="tab-btn-send" onclick="showTab('send')">Send</button>
   </div>
@@ -447,6 +447,69 @@
   </div>
   </div><!-- /tab-send -->
 
+  <!-- ══ TAB: Profile ══ -->
+  <div id="tab-profile" class="tab-panel">
+    <div class="card" style="max-width:640px;margin:0 auto;">
+      <h2 style="font-size:22px;margin-bottom:4px;">Your Profile</h2>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1.5rem;">This shapes every email the app writes for you — your background, voice, and sign-off. Saved to this browser.</p>
+
+      <div class="modal-field"><label>Your name (used in sign-off)</label><input type="text" id="set-name" placeholder="Alex Johnson" /></div>
+      <div class="modal-field">
+        <label>About you — school, year, clubs, internships, anything that creates common ground</label>
+        <textarea id="set-profile" rows="4" placeholder="e.g. Male student at Cornell Hotel School (we're called 'Hotelies'), going into junior year. Clubs: Alpha Kappa Psi (AKPsi), CREDIT, Cornell Real Estate Club (CREC). Interning in IB at BofA next summer."></textarea>
+      </div>
+      <div class="modal-field">
+        <label>Subject line style</label>
+        <input type="text" id="set-subject-style" placeholder="e.g. [Hotelie + Incoming @ BofA] Catching Up Soon" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">The app builds a bracketed tag from whatever you share with each contact, then a short reason for the email.</div>
+      </div>
+      <div class="modal-field">
+        <label>Sign-off style</label>
+        <select id="set-signoff">
+          <option value="Best">Best,</option>
+          <option value="Cheers">Cheers,</option>
+          <option value="Warm regards">Warm regards,</option>
+          <option value="Talk soon">Talk soon,</option>
+          <option value="Thanks">Thanks,</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Email tone</label>
+        <select id="set-tone">
+          <option value="warm and casual">Warm and casual</option>
+          <option value="professional and concise">Professional and concise</option>
+          <option value="friendly and enthusiastic">Friendly and enthusiastic</option>
+          <option value="brief and direct">Brief and direct</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Your writing style</label>
+        <div style="border:1px dashed var(--border-strong);border-radius:var(--radius);padding:14px;text-align:center;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:2px;">Upload a .zip of your sent emails</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">The app reads them on your computer to learn your tone. Nothing is uploaded anywhere.</div>
+          <button class="btn btn-sm" onclick="document.getElementById('zip-input').click()">Choose .zip file</button>
+          <input type="file" id="zip-input" accept=".zip" style="display:none;" onchange="handleEmailZip(this.files[0])" />
+          <div id="zip-status" style="font-size:12px;margin-top:8px;"></div>
+        </div>
+        <label style="margin-top:6px;">Style sample the app will match (auto-filled from your zip, or paste/edit manually)</label>
+        <textarea id="set-style" rows="6" placeholder="Hi Sarah,&#10;&#10;Hope you're doing well! Just wanted to check in…"></textarea>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Tip: in Google Takeout, export Gmail as .zip. Or zip up a few .eml / .txt emails you've sent.</div>
+      </div>
+      <div class="modal-field">
+        <label>Max email length</label>
+        <select id="set-length">
+          <option value="under 100 words">Very short (under 100 words)</option>
+          <option value="under 150 words" selected>Short (under 150 words)</option>
+          <option value="under 200 words">Medium (under 200 words)</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;justify-content:flex-end;margin-top:1.25rem;">
+        <span id="profile-saved" style="font-size:12px;color:var(--success);opacity:0;transition:opacity 0.2s;">✓ Saved</span>
+        <button class="btn btn-primary" onclick="saveSettings()">Save profile</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Email preview drawer -->
@@ -483,66 +546,6 @@
   </div>
 </div>
 
-<!-- Settings modal -->
-<div id="modal-settings" class="modal-bg" style="display:none;">
-  <div class="modal">
-    <h3>⚙ Settings</h3>
-    <div class="modal-field"><label>Your name (used in sign-off)</label><input type="text" id="set-name" placeholder="Alex Johnson" /></div>
-    <div class="modal-field">
-      <label>About you — school, year, clubs, internships, anything that creates common ground</label>
-      <textarea id="set-profile" rows="4" placeholder="e.g. Male student at Cornell Hotel School (we're called 'Hotelies'), going into junior year. Clubs: Alpha Kappa Psi (AKPsi), CREDIT, Cornell Real Estate Club (CREC). Interning in IB at BofA next summer."></textarea>
-    </div>
-    <div class="modal-field">
-      <label>Subject line style</label>
-      <input type="text" id="set-subject-style" placeholder="e.g. [Hotelie + Incoming @ BofA] Catching Up Soon" />
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">The app builds a bracketed tag from whatever you share with each contact, then a short reason for the email.</div>
-    </div>
-    <div class="modal-field">
-      <label>Sign-off style</label>
-      <select id="set-signoff">
-        <option value="Best">Best,</option>
-        <option value="Cheers">Cheers,</option>
-        <option value="Warm regards">Warm regards,</option>
-        <option value="Talk soon">Talk soon,</option>
-        <option value="Thanks">Thanks,</option>
-      </select>
-    </div>
-    <div class="modal-field">
-      <label>Email tone</label>
-      <select id="set-tone">
-        <option value="warm and casual">Warm and casual</option>
-        <option value="professional and concise">Professional and concise</option>
-        <option value="friendly and enthusiastic">Friendly and enthusiastic</option>
-        <option value="brief and direct">Brief and direct</option>
-      </select>
-    </div>
-    <div class="modal-field">
-      <label>Your writing style</label>
-      <div style="border:1px dashed var(--border-strong);border-radius:var(--radius);padding:14px;text-align:center;margin-bottom:8px;">
-        <div style="font-size:13px;font-weight:500;margin-bottom:2px;">Upload a .zip of your sent emails</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">The app reads them on your computer to learn your tone. Nothing is uploaded anywhere.</div>
-        <button class="btn btn-sm" onclick="document.getElementById('zip-input').click()">Choose .zip file</button>
-        <input type="file" id="zip-input" accept=".zip" style="display:none;" onchange="handleEmailZip(this.files[0])" />
-        <div id="zip-status" style="font-size:12px;margin-top:8px;"></div>
-      </div>
-      <label style="margin-top:6px;">Style sample the app will match (auto-filled from your zip, or paste/edit manually)</label>
-      <textarea id="set-style" rows="6" placeholder="Hi Sarah,&#10;&#10;Hope you're doing well! Just wanted to check in…"></textarea>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Tip: in Google Takeout, export Gmail as .zip. Or zip up a few .eml / .txt emails you've sent.</div>
-    </div>
-    <div class="modal-field">
-      <label>Max email length</label>
-      <select id="set-length">
-        <option value="under 100 words">Very short (under 100 words)</option>
-        <option value="under 150 words" selected>Short (under 150 words)</option>
-        <option value="under 200 words">Medium (under 200 words)</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;">
-      <button class="btn" onclick="closeModal('modal-settings')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ── Constants ──────────────────────────────────────────────
@@ -652,14 +655,15 @@ async function refreshAuth() {
   renderAuth();
 }
 
-// Switch the visible tab (login / contacts / send).
+// Switch the visible tab (login / profile / contacts / send).
 function showTab(name) {
-  ['login', 'contacts', 'send'].forEach(t => {
+  ['login', 'profile', 'contacts', 'send'].forEach(t => {
     const panel = document.getElementById('tab-' + t);
     const btn = document.getElementById('tab-btn-' + t);
     if (panel) panel.classList.toggle('active', t === name);
     if (btn) btn.classList.toggle('active', t === name);
   });
+  if (name === 'profile') loadProfileFields();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -2036,7 +2040,8 @@ async function sendApproved() {
 }
 
 // ── Settings ──────────────────────────────────────────────
-function openSettings() {
+// Fill the Profile tab's fields from saved settings.
+function loadProfileFields() {
   document.getElementById('set-name').value = settings.name || '';
   document.getElementById('set-profile').value = settings.profile || '';
   document.getElementById('set-subject-style').value = settings.subjectStyle || '';
@@ -2044,7 +2049,6 @@ function openSettings() {
   document.getElementById('set-tone').value = settings.tone || 'warm and casual';
   document.getElementById('set-style').value = settings.styleExamples || '';
   document.getElementById('set-length').value = settings.maxLength || 'under 150 words';
-  document.getElementById('modal-settings').style.display = 'flex';
 }
 
 // ── Sent-email zip parsing (style learning) ────────────────
@@ -2177,10 +2181,14 @@ function saveSettings() {
   settings.styleExamples = document.getElementById('set-style').value.trim();
   settings.maxLength = document.getElementById('set-length').value;
   localStorage.setItem('ne_settings', JSON.stringify(settings));
-  closeModal('modal-settings');
+  // Flash a "Saved" confirmation on the Profile tab.
+  const saved = document.getElementById('profile-saved');
+  if (saved) {
+    saved.style.opacity = '1';
+    clearTimeout(saved._t);
+    saved._t = setTimeout(() => { saved.style.opacity = '0'; }, 2000);
+  }
 }
-
-function closeModal(id) { document.getElementById(id).style.display='none'; }
 
 // ── Excel template download ────────────────────────────────
 function downloadTemplate() {
