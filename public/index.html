@@ -216,6 +216,7 @@
     <button class="tab" id="tab-btn-profile" onclick="showTab('profile')">Profile</button>
     <button class="tab" id="tab-btn-contacts" onclick="showTab('contacts')">Contacts</button>
     <button class="tab" id="tab-btn-send" onclick="showTab('send')">Send</button>
+    <button class="tab" id="tab-btn-history" onclick="showTab('history')">History</button>
   </div>
 
   <!-- ══ TAB: Login / account ══ -->
@@ -510,6 +511,35 @@
     </div>
   </div>
 
+  <!-- ══ TAB: History ══ -->
+  <div id="tab-history" class="tab-panel">
+    <div class="card">
+      <div class="queue-header" style="flex-wrap:wrap;">
+        <h2>Sent history</h2>
+        <span class="count-pill" id="history-count">0 sent</span>
+        <div style="margin-left:auto;">
+          <button class="btn btn-sm" onclick="loadHistory()">↻ Refresh</button>
+        </div>
+      </div>
+      <table class="contact-table">
+        <thead>
+          <tr>
+            <th>Recipient</th>
+            <th>Company</th>
+            <th>Subject</th>
+            <th>Sent</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+      <div id="history-empty" class="empty" style="display:none;">
+        <div class="empty-icon">✉</div>
+        <div style="font-family:var(--font-display);font-size:18px;color:var(--text-secondary);margin-bottom:4px;">Nothing sent yet</div>
+        <div style="font-size:13px;">Emails you send will be logged here, so you can keep track of who you've reached and when.</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Email preview drawer -->
@@ -642,6 +672,113 @@ let processing = false;
 let googleEnabled = false;   // does the backend have Gmail sending configured?
 let currentUser = null;      // { email, name } when signed in, else null
 
+// ── Server-synced per-user data ────────────────────────────
+let sentHistory = [];               // rows from /api/history
+let sentEmailsSet = new Set();       // lowercased recipient emails already sent to
+
+// Load this user's saved profile from the server and merge it into settings.
+async function loadServerProfile() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch('/api/profile');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.profile && typeof data.profile === 'object') {
+      settings = { ...settings, ...data.profile };
+      localStorage.setItem('ne_settings', JSON.stringify(settings)); // local cache
+      loadProfileFields();
+    }
+  } catch(e) { console.warn('Could not load profile from server', e); }
+}
+
+// Save the current settings object to the server (when signed in).
+async function saveServerProfile() {
+  if (!currentUser) return;
+  try {
+    await fetch('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+  } catch(e) { console.warn('Could not save profile to server', e); }
+}
+
+// Load this user's saved contact list from the server; show it if present.
+async function loadServerContacts() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch('/api/contacts');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data.contacts) && data.contacts.length) {
+      allContacts = data.contacts;
+      // Ensure every contact has a stable id and display name.
+      allContacts.forEach((c, i) => {
+        if (c.id === undefined) c.id = i;
+        if (!c.name) c.name = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || ('Contact ' + (i+1));
+      });
+      contacts = allContacts.slice();
+      showSelection();
+    }
+  } catch(e) { console.warn('Could not load contacts from server', e); }
+}
+
+// Save the current contact list to the server (when signed in).
+async function saveServerContacts() {
+  if (!currentUser) return;
+  try {
+    await fetch('/api/contacts', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contacts: allContacts })
+    });
+  } catch(e) { console.warn('Could not save contacts to server', e); }
+}
+
+// Load sent history + rebuild the "already emailed" set, then re-render.
+async function loadHistory() {
+  if (!currentUser) { sentHistory = []; sentEmailsSet = new Set(); renderHistory(); return; }
+  try {
+    const res = await fetch('/api/history');
+    if (!res.ok) return;
+    const data = await res.json();
+    sentHistory = data.history || [];
+    sentEmailsSet = new Set(sentHistory.map(r => (r.to_email || '').toLowerCase()));
+  } catch(e) { console.warn('Could not load history', e); }
+  renderHistory();
+  // Refresh the selection screen so "already emailed" tags appear.
+  if (document.getElementById('selection-section').style.display !== 'none') applyFilters();
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('history-body');
+  const empty = document.getElementById('history-empty');
+  const count = document.getElementById('history-count');
+  if (count) count.textContent = sentHistory.length + ' sent';
+  if (!tbody) return;
+  if (!sentHistory.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  tbody.innerHTML = sentHistory.map(r => {
+    const when = r.sent_at ? new Date(r.sent_at).toLocaleString() : '';
+    const name = r.to_name || r.to_email || '';
+    return `<tr>
+      <td><div style="font-weight:500;">${escapeHtml(name)}</div><div style="font-size:11px;color:var(--text-muted);">${escapeHtml(r.to_email||'')}</div></td>
+      <td style="font-size:12px;color:var(--text-secondary);">${escapeHtml(r.company||'—')}</td>
+      <td style="font-size:12px;">${escapeHtml(r.subject||'—')}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${escapeHtml(when)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
 // Ask the backend whether sending is available and who (if anyone) is signed in.
 async function refreshAuth() {
   try {
@@ -655,15 +792,16 @@ async function refreshAuth() {
   renderAuth();
 }
 
-// Switch the visible tab (login / profile / contacts / send).
+// Switch the visible tab (login / profile / contacts / send / history).
 function showTab(name) {
-  ['login', 'profile', 'contacts', 'send'].forEach(t => {
+  ['login', 'profile', 'contacts', 'send', 'history'].forEach(t => {
     const panel = document.getElementById('tab-' + t);
     const btn = document.getElementById('tab-btn-' + t);
     if (panel) panel.classList.toggle('active', t === name);
     if (btn) btn.classList.toggle('active', t === name);
   });
   if (name === 'profile') loadProfileFields();
+  if (name === 'history') loadHistory();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -730,7 +868,7 @@ async function sendDrawerViaGmail() {
     const res = await fetch('/api/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: c.email, subject, body })
+      body: JSON.stringify({ to: c.email, subject, body, toName: c.name, company: c.company })
     });
     const data = await res.json();
     if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
@@ -740,6 +878,7 @@ async function sendDrawerViaGmail() {
     if (statusEl) statusEl.innerHTML = '<span class="status-badge status-done">✓ Sent</span>';
     const appr = document.getElementById(`approve-${c.id}`);
     if (appr) { appr.checked = false; appr.disabled = true; }
+    loadHistory();  // refresh sent history + already-emailed markers
     btn.textContent = '✓ Sent';
     setTimeout(() => { closeDrawerDirect(); }, 700);
   } catch(e) {
@@ -1289,6 +1428,7 @@ function confirmMboxContacts() {
   // Feed into the same contact pipeline the Excel path uses
   contacts = chosen.map((c, i) => ({ ...c, id: i, name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email }));
   allContacts = contacts.slice();
+  saveServerContacts();            // remember this list for next time (when signed in)
   document.getElementById('mbox-review-section').style.display = 'none';
   showSelection();
 }
@@ -1329,6 +1469,7 @@ function parseContacts(rows) {
   }
 
   allContacts = contacts.slice();  // preserve the full list
+  saveServerContacts();            // remember this list for next time (when signed in)
   showSelection();
 }
 
@@ -1452,7 +1593,7 @@ function applyFilters() {
             <div class="name-cell">
               <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
               <div>
-                <div class="name">${c.name}</div>
+                <div class="name">${c.name}${sentEmailsSet.has((c.email||'').toLowerCase()) ? ' <span class="reason-chip reason-work" title="You have emailed this person before">emailed</span>' : ''}</div>
                 <div class="email-sub">${c.title||'—'}</div>
               </div>
             </div>
@@ -2018,7 +2159,7 @@ async function sendApproved() {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: c.email, subject: r.subject || '', body: r.body || '' })
+        body: JSON.stringify({ to: c.email, subject: r.subject || '', body: r.body || '', toName: c.name, company: c.company })
       });
       const data = await res.json();
       if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
@@ -2036,6 +2177,7 @@ async function sendApproved() {
 
   prog.textContent = `Done: ${sent} sent${failed ? ', ' + failed + ' failed' : ''}.`;
   btn.disabled = false; openBtn.disabled = false;
+  if (sent) loadHistory();  // refresh sent history + already-emailed markers
   if (failed) alert(`Sent ${sent}. ${failed} could not be sent — hover the red "Failed" badges to see why, then use "Review" to retry those individually.`);
 }
 
@@ -2181,6 +2323,7 @@ function saveSettings() {
   settings.styleExamples = document.getElementById('set-style').value.trim();
   settings.maxLength = document.getElementById('set-length').value;
   localStorage.setItem('ne_settings', JSON.stringify(settings));
+  saveServerProfile();  // persist to this user's account when signed in
   // Flash a "Saved" confirmation on the Profile tab.
   const saved = document.getElementById('profile-saved');
   if (saved) {
@@ -2230,6 +2373,12 @@ function resetApp() {
 // then land on the Login tab (or Contacts if already signed in).
 (async function init() {
   await refreshAuth();
+  if (currentUser) {
+    // Pull this user's saved profile, contacts, and sent history from the server.
+    await loadServerProfile();
+    await loadHistory();
+    await loadServerContacts();  // shows the selection screen if a saved list exists
+  }
   showTab(currentUser ? 'contacts' : 'login');
 })();
 </script>

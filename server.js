@@ -173,7 +173,7 @@ app.post('/api/claude', gateAI, hourlyLimit(50), async (req, res) => {
 // ── Send an email through the signed-in user's Gmail ──────────────
 app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
   try {
-    const { to, subject, body } = req.body || {};
+    const { to, subject, body, toName, company } = req.body || {};
     if (!to || !subject || !body) {
       return res.status(400).json({ error: { message: 'Missing recipient, subject, or body.' } });
     }
@@ -186,10 +186,68 @@ app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
       fromEmail: req.session.user.email,
       to, subject, body,
     });
+    // Record it in the user's sent history (best-effort; don't fail the send if this errors).
+    try {
+      await db.addSentEmail(req.session.user.sub, { to_email: to, to_name: toName, company, subject });
+    } catch (histErr) {
+      console.error('Could not record sent email:', histErr.message);
+    }
     res.json({ ok: true, id: result.id });
   } catch (e) {
     console.error('Send failed:', e);
     res.status(500).json({ error: { message: 'Failed to send: ' + (e.message || 'unknown error') } });
+  }
+});
+
+// ── Per-user profile (name, background, tone, writing style) ──────
+app.get('/api/profile', requireAuth, async (req, res) => {
+  try {
+    const data = await db.getProfile(req.session.user.sub);
+    res.json({ profile: data || null });
+  } catch (e) {
+    console.error('Load profile failed:', e);
+    res.status(500).json({ error: { message: 'Could not load profile.' } });
+  }
+});
+app.put('/api/profile', requireAuth, async (req, res) => {
+  try {
+    await db.saveProfile(req.session.user.sub, req.body || {});
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Save profile failed:', e);
+    res.status(500).json({ error: { message: 'Could not save profile.' } });
+  }
+});
+
+// ── Per-user saved contact list ───────────────────────────────────
+app.get('/api/contacts', requireAuth, async (req, res) => {
+  try {
+    const data = await db.getContacts(req.session.user.sub);
+    res.json({ contacts: Array.isArray(data) ? data : [] });
+  } catch (e) {
+    console.error('Load contacts failed:', e);
+    res.status(500).json({ error: { message: 'Could not load contacts.' } });
+  }
+});
+app.put('/api/contacts', requireAuth, async (req, res) => {
+  try {
+    const list = Array.isArray(req.body && req.body.contacts) ? req.body.contacts : [];
+    await db.saveContacts(req.session.user.sub, list);
+    res.json({ ok: true, count: list.length });
+  } catch (e) {
+    console.error('Save contacts failed:', e);
+    res.status(500).json({ error: { message: 'Could not save contacts.' } });
+  }
+});
+
+// ── Sent-email history ────────────────────────────────────────────
+app.get('/api/history', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.getSentHistory(req.session.user.sub);
+    res.json({ history: rows });
+  } catch (e) {
+    console.error('Load history failed:', e);
+    res.status(500).json({ error: { message: 'Could not load history.' } });
   }
 });
 

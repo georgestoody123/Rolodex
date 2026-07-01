@@ -53,7 +53,9 @@ function decrypt(b64) {
 
 // ── Table + queries ───────────────────────────────────────────────
 async function initDb() {
-  await getPool().query(`
+  const pool = getPool();
+  // Each signed-in user's Gmail refresh token (encrypted).
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS gmail_users (
       google_sub   TEXT PRIMARY KEY,
       email        TEXT NOT NULL,
@@ -62,6 +64,78 @@ async function initDb() {
       updated_at   TIMESTAMPTZ DEFAULT now()
     )
   `);
+  // Per-user profile (name, background, tone, writing style, etc.) as a JSON blob.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      google_sub TEXT PRIMARY KEY,
+      data       JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  // Per-user saved contact list as a JSON array.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_contacts (
+      google_sub TEXT PRIMARY KEY,
+      data       JSONB NOT NULL DEFAULT '[]',
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  // One row per email actually sent, so we can show sent history / avoid double-emailing.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sent_emails (
+      id         BIGSERIAL PRIMARY KEY,
+      google_sub TEXT NOT NULL,
+      to_email   TEXT NOT NULL,
+      to_name    TEXT,
+      company    TEXT,
+      subject    TEXT,
+      sent_at    TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sent_emails_sub ON sent_emails (google_sub, sent_at DESC)`);
+}
+
+// ── Per-user profile ──────────────────────────────────────────────
+async function getProfile(sub) {
+  const r = await getPool().query('SELECT data FROM user_profiles WHERE google_sub = $1', [sub]);
+  return r.rows.length ? r.rows[0].data : null;
+}
+async function saveProfile(sub, data) {
+  await getPool().query(
+    `INSERT INTO user_profiles (google_sub, data, updated_at) VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (google_sub) DO UPDATE SET data = $2::jsonb, updated_at = now()`,
+    [sub, JSON.stringify(data || {})]
+  );
+}
+
+// ── Per-user contact list ─────────────────────────────────────────
+async function getContacts(sub) {
+  const r = await getPool().query('SELECT data FROM user_contacts WHERE google_sub = $1', [sub]);
+  return r.rows.length ? r.rows[0].data : null;
+}
+async function saveContacts(sub, data) {
+  await getPool().query(
+    `INSERT INTO user_contacts (google_sub, data, updated_at) VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (google_sub) DO UPDATE SET data = $2::jsonb, updated_at = now()`,
+    [sub, JSON.stringify(Array.isArray(data) ? data : [])]
+  );
+}
+
+// ── Sent-email history ────────────────────────────────────────────
+async function addSentEmail(sub, { to_email, to_name, company, subject }) {
+  await getPool().query(
+    `INSERT INTO sent_emails (google_sub, to_email, to_name, company, subject)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [sub, to_email, to_name || '', company || '', subject || '']
+  );
+}
+async function getSentHistory(sub, limit = 500) {
+  const r = await getPool().query(
+    `SELECT to_email, to_name, company, subject, sent_at
+     FROM sent_emails WHERE google_sub = $1 ORDER BY sent_at DESC LIMIT $2`,
+    [sub, limit]
+  );
+  return r.rows;
 }
 
 // Insert or update a user's encrypted refresh token, keyed by their Google id.
@@ -86,4 +160,9 @@ async function getUserRefreshToken(sub) {
   return decrypt(r.rows[0].refresh_token);
 }
 
-module.exports = { dbEnabled, initDb, saveUser, getUserRefreshToken };
+module.exports = {
+  dbEnabled, initDb, saveUser, getUserRefreshToken,
+  getProfile, saveProfile,
+  getContacts, saveContacts,
+  addSentEmail, getSentHistory,
+};
