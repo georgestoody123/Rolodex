@@ -13,12 +13,14 @@
 //   - If Google sign-in is NOT configured yet (e.g. running locally), we fall
 //     back to the simple shared-password gate so nothing is ever left open.
 
-require('dotenv').config();
+const path = require('path');
+// Load .env from this file's own folder, so the server works no matter which
+// directory it's started from.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cookieSession = require('cookie-session');
 const basicAuth = require('express-basic-auth');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
 const crypto = require('crypto');
 const db = require('./db');
 const googleHelper = require('./google');

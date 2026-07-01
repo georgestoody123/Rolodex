@@ -3,50 +3,58 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Network Emailer</title>
+<title>Rolodex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #f4f4f2;
-    --surface: #ffffff;
-    --surface-2: #f9f9f8;
-    --border: rgba(0,0,0,0.09);
-    --border-strong: rgba(0,0,0,0.15);
-    --text: #181816;
-    --text-muted: #888;
-    --text-secondary: #555;
-    --accent: #2563eb;
-    --accent-bg: #eff6ff;
-    --accent-border: #bfdbfe;
-    --success: #16a34a;
-    --success-bg: #f0fdf4;
-    --success-border: #bbf7d0;
-    --warning: #b45309;
-    --warning-bg: #fffbeb;
-    --danger: #dc2626;
-    --danger-bg: #fef2f2;
-    --radius: 8px;
+    --bg: #0c0b08;
+    --surface: #15130d;
+    --surface-2: #1e1a10;
+    --border: rgba(198,166,92,0.16);
+    --border-strong: rgba(198,166,92,0.34);
+    --text: #f3ecda;
+    --text-muted: #9a9179;
+    --text-secondary: #c7bda3;
+    --accent: #c6a65c;
+    --accent-bg: rgba(198,166,92,0.10);
+    --accent-border: rgba(198,166,92,0.40);
+    --gold: #c6a65c;
+    --gold-bright: #e6cd86;
+    --gold-deep: #a2823b;
+    --success: #93ab84;
+    --success-bg: rgba(147,171,132,0.12);
+    --success-border: rgba(147,171,132,0.40);
+    --warning: #d9a441;
+    --warning-bg: rgba(217,164,65,0.12);
+    --danger: #cf6f5c;
+    --danger-bg: rgba(207,111,92,0.13);
+    --radius: 6px;
+    --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh;
+    background-image: radial-gradient(circle at 12% -8%, rgba(198,166,92,0.07), transparent 42%), radial-gradient(circle at 100% 0%, rgba(198,166,92,0.05), transparent 38%); background-attachment: fixed; }
 
   /* ── Layout ── */
   .app { max-width: 980px; margin: 0 auto; padding: 1.5rem; }
 
   /* ── Header ── */
   .header { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
-  .logo { width: 38px; height: 38px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; flex-shrink: 0; }
-  .header h1 { font-size: 18px; font-weight: 600; }
-  .header p { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+  .logo { width: 46px; height: 46px; background: transparent; border: 1.5px solid var(--gold); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--gold-bright); font-family: var(--font-display); font-weight: 700; font-size: 25px; flex-shrink: 0; box-shadow: inset 0 0 14px rgba(198,166,92,0.18); }
+  .header h1 { font-family: var(--font-display); font-size: 27px; font-weight: 700; letter-spacing: 0.02em; }
+  .header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; letter-spacing: 0.14em; text-transform: uppercase; }
   .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
   /* ── Buttons ── */
   .btn { padding: 8px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-family: inherit; transition: background 0.1s, opacity 0.1s; display: inline-flex; align-items: center; gap: 6px; }
   .btn:hover { background: var(--bg); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
-  .btn-primary:hover { background: #1d4ed8; }
+  .btn-primary { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #1a1509; border-color: var(--gold-deep); font-weight: 600; }
+  .btn-primary:hover { background: linear-gradient(180deg, #efd695, var(--gold-bright)); }
   .btn-sm { padding: 5px 11px; font-size: 12px; }
   .filter-chip.chip-active { background: var(--accent); color: #fff; border-color: transparent; }
   .reason-chip { display: inline-block; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 20px; margin: 2px 2px 0 0; white-space: nowrap; }
@@ -152,10 +160,38 @@
   .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; }
   .info-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 
+  /* ── Old-money black & gold extras ── */
+  h1, h2, .modal h3, .drawer-header h3, .queue-header h2, .upload-zone h2 { font-family: var(--font-display); font-weight: 600; }
+  .btn:hover { background: var(--surface-2); }
+  .status-error { border-color: rgba(207,111,92,0.45) !important; }
+  a { color: var(--gold-bright); }
+  input[type="checkbox"] { accent-color: var(--gold); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-strong); margin-bottom: 1.75rem; }
+  .tab { position: relative; padding: 12px 24px; background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: var(--font-display); font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); cursor: pointer; transition: color 0.15s; }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active { color: var(--gold-bright); border-bottom-color: var(--gold); }
+  .tab-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); margin-left: 7px; vertical-align: middle; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Login / account tab */
+  .login-card { max-width: 520px; margin: 1.5rem auto; text-align: center; padding: 2.75rem 2rem; }
+  .login-card .crest { width: 66px; height: 66px; margin: 0 auto 1.1rem; border: 1.5px solid var(--gold); border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    color: var(--gold-bright); font-family: var(--font-display); font-size: 34px; box-shadow: inset 0 0 18px rgba(198,166,92,0.20); }
+  .login-card h2 { font-family: var(--font-display); font-size: 23px; margin-bottom: 10px; }
+  .login-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 1.25rem; }
+  .gold-rule { height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 1.4rem 0; opacity: 0.5; }
+  .btn-google { background: #fdfaf2; color: #1a1509; border-color: var(--gold-deep); font-weight: 600; padding: 10px 22px; }
+  .btn-google:hover { background: #f0e7d0; }
+
   /* ── Responsive ── */
   @media (max-width: 600px) {
     .header p { display: none; }
     .contact-table th:nth-child(3), .contact-table td:nth-child(3) { display: none; }
+    .tab { padding: 10px 14px; font-size: 13px; }
   }
 </style>
 </head>
@@ -164,29 +200,31 @@
 
   <!-- Header -->
   <div class="header">
-    <div class="logo">✉</div>
+    <div class="logo">R</div>
     <div>
-      <h1>Network Emailer</h1>
-      <p>Upload contacts → AI writes personalized emails automatically</p>
+      <h1>Rolodex</h1>
+      <p>Private networking · impeccably written</p>
     </div>
     <div class="header-right">
-      <span id="auth-area"></span>
-      <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Settings</button>
-      <button class="btn btn-sm" onclick="downloadTemplate()">⬇ Excel template</button>
+      <button class="btn btn-ghost btn-sm" onclick="openSettings()">Settings</button>
+      <button class="btn btn-sm" onclick="downloadTemplate()">Excel template</button>
     </div>
   </div>
 
-  <!-- Google sign-in prompt (shown only when sending is enabled and you're signed out) -->
-  <div id="signin-banner" style="display:none;border:1px solid var(--accent-border);background:var(--accent-bg);border-radius:12px;padding:14px 16px;margin-bottom:1.25rem;">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <span style="font-size:18px;">🔐</span>
-      <div style="flex:1;min-width:200px;">
-        <div style="font-weight:600;font-size:14px;">Sign in with Google to send emails from your Gmail</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">You can browse and generate drafts either way, but sending requires sign-in. We only ever use this to send the emails you approve.</div>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="signInWithGoogle()">Sign in with Google</button>
-    </div>
+  <!-- Tab navigation -->
+  <div class="tabs">
+    <button class="tab active" id="tab-btn-login" onclick="showTab('login')">Login</button>
+    <button class="tab" id="tab-btn-contacts" onclick="showTab('contacts')">Contacts</button>
+    <button class="tab" id="tab-btn-send" onclick="showTab('send')">Send</button>
   </div>
+
+  <!-- ══ TAB: Login / account ══ -->
+  <div id="tab-login" class="tab-panel active">
+    <div class="card login-card" id="login-content"><!-- filled by renderAuth() --></div>
+  </div>
+
+  <!-- ══ TAB: Contacts ══ -->
+  <div id="tab-contacts" class="tab-panel">
 
   <!-- Upload section -->
   <div id="upload-section">
@@ -337,6 +375,10 @@
       </div>
     </div>
   </div>
+  </div><!-- /tab-contacts -->
+
+  <!-- ══ TAB: Send ══ -->
+  <div id="tab-send" class="tab-panel">
 
   <!-- Processing section -->
   <div id="processing-section" style="display:none;">
@@ -396,6 +438,14 @@
       </table>
     </div>
   </div>
+
+  <!-- Empty state shown on the Send tab before any emails are generated -->
+  <div id="send-empty" class="empty">
+    <div class="empty-icon">✉</div>
+    <div style="font-family:var(--font-display);font-size:18px;color:var(--text-secondary);margin-bottom:4px;">No emails to send yet</div>
+    <div style="font-size:13px;">Head to the <strong>Contacts</strong> tab, choose who to reach, and generate drafts. They'll appear here ready to send.</div>
+  </div>
+  </div><!-- /tab-send -->
 
 </div>
 
@@ -602,29 +652,49 @@ async function refreshAuth() {
   renderAuth();
 }
 
+// Switch the visible tab (login / contacts / send).
+function showTab(name) {
+  ['login', 'contacts', 'send'].forEach(t => {
+    const panel = document.getElementById('tab-' + t);
+    const btn = document.getElementById('tab-btn-' + t);
+    if (panel) panel.classList.toggle('active', t === name);
+    if (btn) btn.classList.toggle('active', t === name);
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function renderAuth() {
-  const area = document.getElementById('auth-area');
-  const banner = document.getElementById('signin-banner');
   // The send buttons only make sense when sending is configured.
   const sendBtn = document.getElementById('drawer-send-btn');
   if (sendBtn) sendBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
   const bulkBtn = document.getElementById('send-approved-btn');
   if (bulkBtn) bulkBtn.style.display = googleEnabled ? 'inline-flex' : 'none';
-  // If the backend has no Gmail sending configured, hide all sign-in UI.
+
+  const el = document.getElementById('login-content');
+  const loginTabBtn = document.getElementById('tab-btn-login');
+  if (loginTabBtn) loginTabBtn.innerHTML = 'Login';
+  if (!el) return;
+
   if (!googleEnabled) {
-    if (area) area.innerHTML = '';
-    if (banner) banner.style.display = 'none';
+    el.innerHTML = '<div class="crest">R</div><h2>Sending not set up</h2>'
+      + '<p>This server has no Gmail sign-in configured, so you can still generate drafts and open them in Gmail manually, but one-click sending is off.</p>';
     return;
   }
+
   if (currentUser) {
-    if (area) area.innerHTML =
-      `<span style="font-size:12px;color:var(--text-secondary);margin-right:6px;">✅ ${currentUser.email}</span>`
-      + `<button class="btn btn-ghost btn-sm" onclick="signOut()">Sign out</button>`;
-    if (banner) banner.style.display = 'none';
+    el.innerHTML = '<div class="crest">✓</div>'
+      + '<h2>You\'re signed in</h2>'
+      + '<p>Connected as <strong>' + currentUser.email + '</strong>. Every email you approve will be sent from this Gmail account.</p>'
+      + '<div class="gold-rule"></div>'
+      + '<button class="btn btn-sm" onclick="signOut()">Sign out</button>';
+    if (loginTabBtn) loginTabBtn.innerHTML = 'Login <span class="tab-dot"></span>';
   } else {
-    if (area) area.innerHTML =
-      `<button class="btn btn-primary btn-sm" onclick="signInWithGoogle()">Sign in with Google</button>`;
-    if (banner) banner.style.display = 'block';
+    el.innerHTML = '<div class="crest">R</div>'
+      + '<h2>Welcome to Rolodex</h2>'
+      + '<p>Sign in with Google to send personalized outreach from your own Gmail. Drafts are written for you; you approve every one before it goes out.</p>'
+      + '<button class="btn btn-primary btn-google" onclick="signInWithGoogle()">Sign in with Google</button>'
+      + '<div class="gold-rule"></div>'
+      + '<p style="font-size:11px;color:var(--text-muted);margin:0;">Access is limited to approved accounts. You may see an "unverified app" notice — choose Advanced, then continue.</p>';
   }
 }
 
@@ -1046,6 +1116,7 @@ function showMboxReview(rows) {
   mboxInclude = new Set();
   rows.forEach((r, i) => { if (r._score >= 5) mboxInclude.add(i); });
 
+  showTab('contacts');
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('mbox-review-section').style.display = 'block';
   document.getElementById('mbox-review-sub').textContent =
@@ -1268,6 +1339,7 @@ function toggleCollapse(bodyId, headerBtn) {
 }
 
 function showSelection() {
+  showTab('contacts');
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('processing-section').style.display = 'none';
   document.getElementById('selection-section').style.display = 'block';
@@ -1446,6 +1518,12 @@ function updateSelCount() {
 }
 
 function generateForSelected() {
+  // Require sign-in first when sending is configured, so drafts go out from Gmail.
+  if (googleEnabled && !currentUser) {
+    alert('Please sign in with Google first (Login tab) so emails can be sent from your Gmail.');
+    showTab('login');
+    return;
+  }
   // Build the working set from the full list, selected only
   contacts = allContacts.filter(c => selectedIds.has(c.id));
   if (!contacts.length) return;
@@ -1458,6 +1536,7 @@ function backToSelection() {
   emailResults = {};
   document.getElementById('processing-section').style.display = 'none';
   document.getElementById('selection-section').style.display = 'block';
+  showTab('contacts');
 }
 
 // ── Connection check ───────────────────────────────────────
@@ -1533,6 +1612,8 @@ async function recheckConnection() {
 
 // ── Processing ─────────────────────────────────────────────
 async function startProcessing() {
+  showTab('send');
+  document.getElementById('send-empty').style.display = 'none';
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('processing-section').style.display = 'block';
   document.getElementById('proc-sub').textContent = `${contacts.length} contact${contacts.length!==1?'s':''} loaded from your file`;
@@ -2126,6 +2207,8 @@ function resetApp() {
   document.getElementById('selection-section').style.display = 'none';
   document.getElementById('mbox-review-section').style.display = 'none';
   document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('send-empty').style.display = 'block';
+  showTab('contacts');
   document.getElementById('file-input').value = '';
   const mboxInput = document.getElementById('mbox-input');
   if (mboxInput) mboxInput.value = '';
@@ -2135,8 +2218,12 @@ function resetApp() {
 }
 
 // ── Startup ───────────────────────────────────────────────
-// Find out whether Gmail sending is available and whether we're signed in.
-refreshAuth();
+// Find out whether Gmail sending is available and whether we're signed in,
+// then land on the Login tab (or Contacts if already signed in).
+(async function init() {
+  await refreshAuth();
+  showTab(currentUser ? 'contacts' : 'login');
+})();
 </script>
 </body>
 </html>
