@@ -17,7 +17,7 @@
     "express": "^4.19.2",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^7.4.0",
-    "googleapis": "^144.0.0",
+    "googleapis": "^173.0.0",
     "pg": "^8.13.1"
   }
 }

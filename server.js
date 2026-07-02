@@ -43,6 +43,37 @@ const GOOGLE_ENABLED = !!(
   db.dbEnabled()
 );
 
+// Don't advertise the server framework.
+app.disable('x-powered-by');
+
+// ── Security headers ──────────────────────────────────────────────
+// Set on every response. The CSP allows exactly the external origins this app
+// uses (Google Fonts + the cdnjs libraries) and nothing else; connect-src
+// 'self' means the page can only make network requests back to this server,
+// which blocks data exfiltration even if a script were somehow injected.
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+  ].join('; '));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieSession({
   name: 'sess',
@@ -123,6 +154,27 @@ app.get('/auth/google/callback', async (req, res) => {
 app.post('/auth/logout', (req, res) => {
   req.session = null;
   res.json({ ok: true });
+});
+
+// Fully disconnect: revoke Google access, delete ALL of this user's stored data
+// (token, profile, contacts, sent history), and end the session.
+app.post('/api/disconnect', requireAuth, async (req, res) => {
+  const sub = req.session.user.sub;
+  try {
+    // Best-effort: tell Google to revoke the token so access is truly cut off.
+    try {
+      const refreshToken = await db.getUserRefreshToken(sub);
+      if (refreshToken) await googleHelper.revokeToken(refreshToken);
+    } catch (revokeErr) {
+      console.warn('Token revoke failed (continuing with deletion):', revokeErr.message);
+    }
+    await db.deleteAllUserData(sub);
+    req.session = null;
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Disconnect failed:', e);
+    res.status(500).json({ error: { message: 'Could not fully delete your data: ' + (e.message || 'unknown') } });
+  }
 });
 
 // Lets the frontend ask "is sign-in available, and who am I?"

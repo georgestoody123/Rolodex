@@ -160,9 +160,19 @@ async function getUserRefreshToken(sub) {
   return decrypt(r.rows[0].refresh_token);
 }
 
+// Delete everything we hold for one user (used by the "delete my data" button).
+async function deleteAllUserData(sub) {
+  const pool = getPool();
+  await pool.query('DELETE FROM sent_emails   WHERE google_sub = $1', [sub]);
+  await pool.query('DELETE FROM user_contacts WHERE google_sub = $1', [sub]);
+  await pool.query('DELETE FROM user_profiles WHERE google_sub = $1', [sub]);
+  await pool.query('DELETE FROM gmail_users   WHERE google_sub = $1', [sub]);
+}
+
 module.exports = {
   dbEnabled, initDb, saveUser, getUserRefreshToken,
   getProfile, saveProfile,
   getContacts, saveContacts,
   addSentEmail, getSentHistory,
+  deleteAllUserData,
 };

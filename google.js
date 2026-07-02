@@ -177,4 +177,17 @@ async function listSentPage({ refreshToken, pageToken }) {
   return { messages, nextPageToken: listRes.data.nextPageToken || null };
 }
 
-module.exports = { authUrl, exchangeCode, sendEmail, listSentPage };
+// Ask Google to revoke a token so the app's access is fully cut off.
+async function revokeToken(token) {
+  const res = await fetch('https://oauth2.googleapis.com/revoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token }).toString(),
+  });
+  // Google returns 200 on success; a 400 usually means it was already revoked/expired.
+  if (!res.ok && res.status !== 400) {
+    throw new Error('Revoke returned ' + res.status);
+  }
+}
+
+module.exports = { authUrl, exchangeCode, sendEmail, listSentPage, revokeToken };

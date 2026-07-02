@@ -799,6 +799,11 @@ function escapeHtml(s) {
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+// Only allow http/https links; anything else (javascript:, data:, etc.) becomes '#'.
+function safeHref(u) {
+  return /^https?:\/\//i.test(String(u || '').trim()) ? u : '#';
+}
+
 // Ask the backend whether sending is available and who (if anyone) is signed in.
 async function refreshAuth() {
   try {
@@ -849,9 +854,16 @@ function renderAuth() {
   if (currentUser) {
     el.innerHTML = '<div class="crest">✓</div>'
       + '<h2>You\'re signed in</h2>'
-      + '<p>Connected as <strong>' + currentUser.email + '</strong>. Every email you approve will be sent from this Gmail account.</p>'
+      + '<p>Connected as <strong>' + escapeHtml(currentUser.email) + '</strong>. Every email you approve will be sent from this Gmail account.</p>'
       + '<div class="gold-rule"></div>'
-      + '<button class="btn btn-sm" onclick="signOut()">Sign out</button>';
+      + '<div class="info-box" style="text-align:left;margin-bottom:12px;">'
+      + '<strong>What we store, and why.</strong> To do its job, Rolodex keeps on its server, tied to your Google account: your profile (name, background, writing style), your contact list, a log of emails you\'ve sent, and an <em>encrypted</em> Google token used only to read your Sent mail (to find contacts) and to send the emails you approve. '
+      + 'We never store the contents of your inbox, and never share your data. You can remove all of it at any time with the button below.'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + '<button class="btn btn-sm" onclick="signOut()">Sign out</button>'
+      + '<button class="btn btn-sm" style="border-color:#fecaca;color:var(--danger);" onclick="disconnectAccount()">Disconnect &amp; delete my data</button>'
+      + '</div>';
     if (loginTabBtn) loginTabBtn.innerHTML = 'Login <span class="tab-dot"></span>';
   } else {
     el.innerHTML = '<div class="crest">R</div>'
@@ -869,6 +881,23 @@ async function signOut() {
   try { await fetch('/auth/logout', { method: 'POST' }); } catch(e) {}
   currentUser = null;
   renderAuth();
+}
+
+// Revoke Google access and permanently delete everything stored for this user.
+async function disconnectAccount() {
+  if (!confirm('This permanently deletes your profile, saved contacts, sent history, and Gmail connection from the server, and revokes the app\'s access to your Google account. This cannot be undone. Continue?')) return;
+  try {
+    const res = await fetch('/api/disconnect', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+    // Clear anything held in this browser too, then reload to a signed-out state.
+    localStorage.removeItem('ne_settings');
+    currentUser = null; allContacts = []; contacts = []; emailResults = {};
+    alert('Your data has been deleted and access revoked. You are now signed out.');
+    window.location.reload();
+  } catch(e) {
+    alert('Could not delete your data: ' + e.message);
+  }
 }
 
 // Send the currently-open drawer email through the signed-in user's Gmail.
@@ -1439,14 +1468,14 @@ function renderMboxReview() {
       <td><input type="checkbox" ${checked} onchange="toggleMboxRow(${i})" style="width:16px;height:16px;cursor:pointer;" /></td>
       <td>
         <div class="name-cell">
-          <div class="avatar" style="background:${bg};color:${fg};">${initials(fullName)}</div>
+          <div class="avatar" style="background:${bg};color:${fg};">${escapeHtml(initials(fullName))}</div>
           <div>
-            <div class="name">${fullName}</div>
-            <div class="email-sub">${r.email}</div>
+            <div class="name">${escapeHtml(fullName)}</div>
+            <div class="email-sub">${escapeHtml(r.email)}</div>
           </div>
         </div>
       </td>
-      <td><input type="text" value="${(r.company||'').replace(/"/g,'&quot;')}" onchange="updateMboxField(${i},'company',this.value)" placeholder="Company?" style="font-size:12px;padding:5px 7px;width:120px;" /></td>
+      <td><input type="text" value="${escapeHtml(r.company||'')}" onchange="updateMboxField(${i},'company',this.value)" placeholder="Company?" style="font-size:12px;padding:5px 7px;width:120px;" /></td>
       <td>${reasonChips || '<span style="font-size:11px;color:var(--text-muted);">—</span>'}</td>
     </tr>`;
   }).join('');
@@ -1671,7 +1700,7 @@ function buildFilterChips() {
   const inds  = [...new Set(allContacts.map(c => (c.industry||'').trim()).filter(Boolean))].sort();
 
   const chip = (label, type) =>
-    `<button class="btn btn-sm filter-chip" data-type="${type}" data-val="${label.replace(/"/g,'&quot;')}" onclick="toggleChip('${type}', this)">${label}</button>`;
+    `<button class="btn btn-sm filter-chip" data-type="${type}" data-val="${escapeHtml(label)}" onclick="toggleChip('${type}', this)">${escapeHtml(label)}</button>`;
 
   document.getElementById('firm-chips').innerHTML =
     firms.length ? firms.map(f => chip(f, 'firm')).join('') : '<span style="font-size:12px;color:var(--text-muted);">No firm data in file</span>';
@@ -1737,7 +1766,7 @@ function applyFilters() {
           <div class="group-header">
             <button class="group-toggle" onclick="toggleGroup('${encodeURIComponent(gName)}')" aria-expanded="${!isCollapsed}">
               <span class="collapse-caret ${isCollapsed ? 'rot' : ''}">▾</span>
-              <span class="group-name">${gName}</span>
+              <span class="group-name">${escapeHtml(gName)}</span>
               <span class="group-count">${members.length}</span>
               ${selectedInGroup ? `<span class="group-selected">${selectedInGroup} selected</span>` : ''}
             </button>
@@ -1757,15 +1786,15 @@ function applyFilters() {
           <td><input type="checkbox" ${checked} onclick="event.stopPropagation();toggleRow(${c.id})" style="width:16px;height:16px;cursor:pointer;" /></td>
           <td>
             <div class="name-cell">
-              <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
+              <div class="avatar" style="background:${bg};color:${fg};">${escapeHtml(initials(c.name))}</div>
               <div>
-                <div class="name">${c.name}${sentEmailsSet.has((c.email||'').toLowerCase()) ? ' <span class="reason-chip reason-work" title="You have emailed this person before">emailed</span>' : ''}</div>
-                <div class="email-sub">${c.title||'—'}</div>
+                <div class="name">${escapeHtml(c.name)}${sentEmailsSet.has((c.email||'').toLowerCase()) ? ' <span class="reason-chip reason-work" title="You have emailed this person before">emailed</span>' : ''}</div>
+                <div class="email-sub">${escapeHtml(c.title||'—')}</div>
               </div>
             </div>
           </td>
-          <td style="color:var(--text-muted);font-size:12px;">${c.industry||'—'}</td>
-          <td style="font-size:12px;color:var(--text-muted);">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${c.group}</span><br>` : ''}${c.connection||'—'}</td>
+          <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(c.industry||'—')}</td>
+          <td style="font-size:12px;color:var(--text-muted);">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${escapeHtml(c.group)}</span><br>` : ''}${escapeHtml(c.connection||'—')}</td>
         </tr>`;
       }
     }
@@ -2138,15 +2167,15 @@ function renderQueue() {
       </td>
       <td>
         <div class="name-cell">
-          <div class="avatar" style="background:${bg};color:${fg};">${initials(c.name)}</div>
+          <div class="avatar" style="background:${bg};color:${fg};">${escapeHtml(initials(c.name))}</div>
           <div>
-            <div class="name">${c.name}</div>
-            <div class="email-sub">${c.title||'—'}</div>
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="email-sub">${escapeHtml(c.title||'—')}</div>
           </div>
         </div>
       </td>
-      <td><span style="font-weight:500;">${c.company||'—'}</span><br><span style="color:var(--text-muted);font-size:12px;">${c.industry||'—'}</span></td>
-      <td id="news-${c.id}" style="color:var(--text-muted);font-size:12px;">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${c.group}</span><br>` : ''}${c.connection||'—'}</td>
+      <td><span style="font-weight:500;">${escapeHtml(c.company||'—')}</span><br><span style="color:var(--text-muted);font-size:12px;">${escapeHtml(c.industry||'—')}</span></td>
+      <td id="news-${c.id}" style="color:var(--text-muted);font-size:12px;">${c.group ? `<span style="font-weight:500;color:var(--text-secondary)">${escapeHtml(c.group)}</span><br>` : ''}${escapeHtml(c.connection||'—')}</td>
       <td id="status-${c.id}"><span class="status-badge status-pending">Pending</span></td>
       <td id="action-${c.id}"></td>
     </tr>`;
@@ -2223,27 +2252,24 @@ function openDrawer(id) {
   document.getElementById('drawer-subject').value = result.subject || '';
   document.getElementById('drawer-body').value = result.body || '';
   const art = result._article;
-  if (art && art.url) {
+  const artUrl = (art && art.url) || result.article_url || '';
+  const artHeadline = (art && art.headline) || result.article_headline || 'Article';
+  const artSource = (art && art.source) || result.article_source || '';
+  if (artUrl) {
+    const href = safeHref(artUrl);
     document.getElementById('drawer-news').innerHTML =
       '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;">'
-      + '<div style="font-size:12px;font-weight:500;margin-bottom:3px;">' + (art.headline||result.article_headline||'Article') + '</div>'
-      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' + (art.source||result.article_source||'') + '</div>'
-      + '<a href="' + (art.url||result.article_url||'#') + '" target="_blank" style="font-size:12px;color:var(--accent);word-break:break-all;">'
-      + (art.url||result.article_url||'') + '</a></div>';
-  } else if (result.article_url) {
-    document.getElementById('drawer-news').innerHTML =
-      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;">'
-      + '<div style="font-size:12px;font-weight:500;margin-bottom:3px;">' + (result.article_headline||'Article') + '</div>'
-      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' + (result.article_source||'') + '</div>'
-      + '<a href="' + result.article_url + '" target="_blank" style="font-size:12px;color:var(--accent);word-break:break-all;">'
-      + result.article_url + '</a></div>';
+      + '<div style="font-size:12px;font-weight:500;margin-bottom:3px;">' + escapeHtml(artHeadline) + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' + escapeHtml(artSource) + '</div>'
+      + '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--accent);word-break:break-all;">'
+      + escapeHtml(artUrl) + '</a></div>';
   } else {
     document.getElementById('drawer-news').innerHTML = '<span style="color:var(--text-muted);font-size:12px;">No article found — generic email generated</span>';
   }
   document.getElementById('drawer-meta').innerHTML = [
-    c.group      ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Group</div><div style="font-size:13px;font-weight:500;">${c.group}</div></div>` : '',
-    c.connection ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Connection</div><div style="font-size:13px;font-weight:500;">${c.connection}</div></div>` : '',
-    c.context    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;grid-column:1/-1;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Notes</div><div style="font-size:13px;">${c.context}</div></div>` : '',
+    c.group      ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Group</div><div style="font-size:13px;font-weight:500;">${escapeHtml(c.group)}</div></div>` : '',
+    c.connection ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Connection</div><div style="font-size:13px;font-weight:500;">${escapeHtml(c.connection)}</div></div>` : '',
+    c.context    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;grid-column:1/-1;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Notes</div><div style="font-size:13px;">${escapeHtml(c.context)}</div></div>` : '',
   ].filter(Boolean).join('');
 
   document.getElementById('drawer').style.display = 'flex';
