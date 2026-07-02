@@ -394,6 +394,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Per-contact profile page -->
+  <div id="contact-profile-section" style="display:none;">
+    <div style="margin-bottom:1rem;">
+      <button class="btn btn-sm" onclick="backFromProfile()">← Back to contacts</button>
+    </div>
+    <div id="profile-body"><!-- filled by renderContactProfile() --></div>
+  </div>
+
   </div><!-- /tab-contacts -->
 
   <!-- ══ TAB: Send ══ -->
@@ -1682,6 +1691,7 @@ function showSelection() {
   showTab('contacts');
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('contact-profile-section').style.display = 'none';
   document.getElementById('selection-section').style.display = 'block';
   document.getElementById('sel-sub').textContent =
     `${allContacts.length} contact${allContacts.length!==1?'s':''} loaded — search or filter, then select who to email`;
@@ -1789,7 +1799,7 @@ function applyFilters() {
               <div class="avatar" style="background:${bg};color:${fg};">${escapeHtml(initials(c.name))}</div>
               <div>
                 <div class="name">${escapeHtml(c.name)}${sentEmailsSet.has((c.email||'').toLowerCase()) ? ' <span class="reason-chip reason-work" title="You have emailed this person before">emailed</span>' : ''}</div>
-                <div class="email-sub">${escapeHtml(c.title||'—')}</div>
+                <div class="email-sub">${escapeHtml(c.title||'—')} · <a onclick="event.stopPropagation();showContactProfile(${c.id})" style="color:var(--accent);cursor:pointer;text-decoration:none;">Profile ↗</a></div>
               </div>
             </div>
           </td>
@@ -1877,6 +1887,221 @@ function backToSelection() {
   document.getElementById('processing-section').style.display = 'none';
   document.getElementById('selection-section').style.display = 'block';
   showTab('contacts');
+}
+
+// ── Per-contact profile page ───────────────────────────────
+function backFromProfile() {
+  document.getElementById('contact-profile-section').style.display = 'none';
+  document.getElementById('selection-section').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Open a LinkedIn people-search prefilled with the contact's name + company.
+function openLinkedInSearch(id) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  const q = [c.name, c.company].filter(Boolean).join(' ');
+  window.open('https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(q), '_blank', 'noopener');
+}
+
+function saveLinkedInUrl(id) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  const val = (document.getElementById('profile-linkedin-input').value || '').trim();
+  if (val && !/^https?:\/\//i.test(val)) { alert('Please paste a full URL starting with https://'); return; }
+  c.linkedinUrl = val;
+  saveServerContacts();
+  renderContactProfile(c);
+}
+
+function saveContactNotes(id) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  c.connection = (document.getElementById('profile-connection-input').value || '').trim();
+  c.context = (document.getElementById('profile-notes-input').value || '').trim();
+  saveServerContacts();
+  const saved = document.getElementById('profile-notes-saved');
+  if (saved) { saved.style.opacity = '1'; clearTimeout(saved._t); saved._t = setTimeout(() => saved.style.opacity = '0', 1800); }
+}
+
+// One web-search call that returns BOTH recent person-specific updates and
+// recent sector news. Cached on the contact so re-opening doesn't re-spend.
+async function fetchContactIntel(contact) {
+  const name = (contact.name || '').trim();
+  const company = (contact.company || '').trim();
+  const title = (contact.title || '').trim();
+  const industry = (contact.industry || '').trim();
+
+  const prompt = `Search the web for recent, real information (2025 or 2026) about a professional and their field.
+
+Person: ${name || 'unknown'}
+Role: ${title || 'unknown'}
+Company: ${company || 'unknown'}
+Industry: ${industry || 'unknown'}
+
+Return TWO things:
+1. "person_updates": up to 3 recent, specific, PUBLIC items about THIS EXACT person if you can find them with reasonable confidence — a job change or promotion, a quote/interview, a deal or panel they took part in, a notable press mention. Only include an item if the name AND company/role clearly match this person. If you cannot confidently identify this specific person, return an EMPTY array. NEVER invent or guess person updates.
+2. "space_news": up to 3 recent notable developments in their SECTOR or specialty (deals, trends, regulatory moves, major moves) that someone in this role would care about.
+
+Return ONLY valid JSON, no markdown:
+{"person_updates":[{"headline":"","source":"","url":"","summary":""}],"space_news":[{"headline":"","source":"","url":"","summary":""}]}`;
+
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5',
+      max_tokens: 900,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!res.ok) throw new Error('Search API ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'API error');
+  let allText = '';
+  for (const block of (data.content || [])) {
+    if (block.type === 'text') allText += block.text + '\n';
+    else if (block.type === 'tool_result') {
+      const inner = Array.isArray(block.content) ? block.content : [];
+      for (const ic of inner) if (ic.type === 'text') allText += ic.text + '\n';
+    }
+  }
+  const jsonMatch = allText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No results parsed');
+  const parsed = JSON.parse(jsonMatch[0]);
+  return {
+    personUpdates: Array.isArray(parsed.person_updates) ? parsed.person_updates.slice(0, 3) : [],
+    spaceNews: Array.isArray(parsed.space_news) ? parsed.space_news.slice(0, 3) : [],
+    fetchedAt: Date.now(),
+  };
+}
+
+async function loadContactIntel(id, force) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  if (c._intel && !force) { renderContactProfile(c); return; }
+  const el = document.getElementById('profile-intel');
+  if (el) el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:13px;"><span class="spinner" style="color:var(--accent);"></span> Searching the web for updates…</div>';
+  try {
+    c._intel = await fetchContactIntel(c);
+    saveServerContacts();  // cache so re-opening is free
+    renderContactProfile(c);
+  } catch(e) {
+    if (el) el.innerHTML = '<div style="font-size:13px;color:var(--danger);">Could not load updates: ' + escapeHtml(e.message) + ' <button class="btn btn-sm" onclick="loadContactIntel(' + id + ', true)">Retry</button></div>';
+  }
+}
+
+// Small helper to render a list of {headline, source, url, summary} items.
+function renderNewsList(items, emptyMsg) {
+  if (!items || !items.length) return '<div style="font-size:12px;color:var(--text-muted);">' + emptyMsg + '</div>';
+  return items.map(a => {
+    const href = safeHref(a.url);
+    return '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;">'
+      + '<div style="font-size:13px;font-weight:500;margin-bottom:2px;">' + escapeHtml(a.headline || 'Untitled') + '</div>'
+      + (a.summary ? '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:5px;">' + escapeHtml(a.summary) + '</div>' : '')
+      + '<div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(a.source || '')
+      + (a.url ? ' · <a href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">read ↗</a>' : '')
+      + '</div></div>';
+  }).join('');
+}
+
+function showContactProfile(id) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('selection-section').style.display = 'none';
+  document.getElementById('contact-profile-section').style.display = 'block';
+  showTab('contacts');
+  renderContactProfile(c);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Auto-load web updates the first time this contact's page is opened.
+  if (!c._intel) loadContactIntel(id, false);
+}
+
+function renderContactProfile(c) {
+  const [bg, fg] = avatarPalette(allContacts.indexOf(c));
+  // Email history with this person (both the imported historical note and app sends)
+  const appSends = sentHistory.filter(h => (h.to_email || '').toLowerCase() === (c.email || '').toLowerCase());
+  const historyBits = [];
+  if (c.context) historyBits.push(escapeHtml(c.context));
+  if (appSends.length) historyBits.push('Sent ' + appSends.length + ' email' + (appSends.length !== 1 ? 's' : '') + ' via Rolodex, most recently ' + new Date(appSends[0].sent_at).toLocaleDateString() + '.');
+  const historyHtml = historyBits.length ? historyBits.map(t => '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px;">' + t + '</div>').join('') : '<div style="font-size:12px;color:var(--text-muted);">No recorded correspondence yet.</div>';
+
+  const intel = c._intel;
+  const linkedinSaved = c.linkedinUrl && /^https?:\/\//i.test(c.linkedinUrl);
+
+  const subHead = (t) => '<div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">' + t + '</div>';
+  let intelHtml;
+  if (intel) {
+    const firstName = escapeHtml((c.name || 'them').split(' ')[0]);
+    intelHtml =
+      subHead('About ' + firstName)
+      + renderNewsList(intel.personUpdates, 'No specific public updates found for this person. Try their LinkedIn directly.')
+      + '<div style="height:14px;"></div>'
+      + subHead('In their space')
+      + renderNewsList(intel.spaceNews, 'No sector news found.')
+      + (intel.fetchedAt ? '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Updated ' + escapeHtml(new Date(intel.fetchedAt).toLocaleString()) + '. Web-searched — verify anything important.</div>' : '');
+  } else {
+    intelHtml = '<div style="font-size:13px;color:var(--text-muted);">Loading…</div>';
+  }
+
+  document.getElementById('profile-body').innerHTML =
+    '<div class="card" style="margin-bottom:1rem;">'
+    + '<div style="display:flex;align-items:center;gap:14px;">'
+    +   '<div class="avatar" style="width:52px;height:52px;font-size:18px;background:' + bg + ';color:' + fg + ';">' + escapeHtml(initials(c.name)) + '</div>'
+    +   '<div style="flex:1;min-width:0;">'
+    +     '<div style="font-family:var(--font-display);font-size:22px;">' + escapeHtml(c.name) + '</div>'
+    +     '<div style="font-size:13px;color:var(--text-muted);">' + escapeHtml([c.title, c.company].filter(Boolean).join(' · ') || '—') + (c.email ? ' · ' + escapeHtml(c.email) : '') + '</div>'
+    +   '</div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
+    +   '<button class="btn btn-sm" onclick="openLinkedInSearch(' + c.id + ')">🔎 Find on LinkedIn</button>'
+    +   (linkedinSaved ? '<a class="btn btn-sm btn-primary" href="' + escapeHtml(safeHref(c.linkedinUrl)) + '" target="_blank" rel="noopener noreferrer">View LinkedIn profile ↗</a>' : '')
+    +   (c.email ? '<button class="btn btn-sm" onclick="showContactProfileEmail(' + c.id + ')">✉ Draft an email</button>' : '')
+    + '</div>'
+    + '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    +   '<input type="text" id="profile-linkedin-input" value="' + escapeHtml(c.linkedinUrl || '') + '" placeholder="Paste their LinkedIn profile URL to save it" style="flex:1;min-width:200px;font-size:12px;padding:6px 9px;" />'
+    +   '<button class="btn btn-sm" onclick="saveLinkedInUrl(' + c.id + ')">Save link</button>'
+    + '</div>'
+    + '</div>'
+
+    + '<div class="card" style="margin-bottom:1rem;">'
+    +   '<h3 style="font-size:14px;margin-bottom:8px;">How you know them</h3>'
+    +   '<label class="field-label">Connection</label>'
+    +   '<input type="text" id="profile-connection-input" value="' + escapeHtml(c.connection || '') + '" placeholder="e.g. Met at the CREC panel; intro\'d by Sam" style="margin-bottom:10px;" />'
+    +   '<label class="field-label">Notes / how you know them</label>'
+    +   '<textarea id="profile-notes-input" rows="4" placeholder="Anything worth remembering — where you met, what you talked about, follow-ups…">' + escapeHtml(c.context || '') + '</textarea>'
+    +   '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px;">'
+    +     '<span id="profile-notes-saved" style="font-size:12px;color:var(--success);opacity:0;transition:opacity .2s;">✓ Saved</span>'
+    +     '<button class="btn btn-primary btn-sm" onclick="saveContactNotes(' + c.id + ')">Save</button>'
+    +   '</div>'
+    + '</div>'
+
+    + '<div class="card" style="margin-bottom:1rem;">'
+    +   '<h3 style="font-size:14px;margin-bottom:8px;">Your history with them</h3>'
+    +   historyHtml
+    + '</div>'
+
+    + '<div class="card">'
+    +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+    +     '<h3 style="font-size:14px;flex:1;">Recent updates & news</h3>'
+    +     '<button class="btn btn-sm" onclick="loadContactIntel(' + c.id + ', true)">↻ Refresh</button>'
+    +   '</div>'
+    +   '<div id="profile-intel">' + intelHtml + '</div>'
+    + '</div>';
+}
+
+// Jump from a profile straight into drafting one email for this contact.
+function showContactProfileEmail(id) {
+  const c = allContacts.find(x => x.id === id);
+  if (!c) return;
+  if (googleEnabled && !currentUser) {
+    alert('Please sign in with Google first (Login tab) so emails can be sent from your Gmail.');
+    showTab('login');
+    return;
+  }
+  contacts = [c];
+  startProcessing();
 }
 
 // ── Connection check ───────────────────────────────────────
@@ -2549,6 +2774,7 @@ function resetApp() {
   document.getElementById('upload-section').style.display = 'block';
   document.getElementById('selection-section').style.display = 'none';
   document.getElementById('mbox-review-section').style.display = 'none';
+  document.getElementById('contact-profile-section').style.display = 'none';
   document.getElementById('processing-section').style.display = 'none';
   document.getElementById('send-empty').style.display = 'block';
   showTab('contacts');
