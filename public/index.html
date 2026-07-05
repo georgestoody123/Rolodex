@@ -616,6 +616,37 @@
   </div>
 </div>
 
+<!-- Consent gate: shown on first use, blocks the app until accepted -->
+<div id="terms-gate" class="modal-bg" style="display:none;z-index:500;">
+  <div class="modal" style="width:600px;max-width:94vw;">
+    <div class="section-eyebrow" style="color:var(--gold);">Before you begin</div>
+    <h3 style="font-size:22px;margin:2px 0 14px;">Terms of Use &amp; Privacy Notice</h3>
+    <div id="terms-text" style="max-height:46vh;overflow-y:auto;padding-right:8px;font-size:13px;line-height:1.7;color:var(--text-secondary);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding-top:12px;padding-bottom:12px;">
+
+      <p style="margin-bottom:10px;"><strong>1. What Rolodex is.</strong> Rolodex is a personal, non-commercial tool that helps you organize professional contacts and draft outreach emails. It is operated by an individual, not a company, and is provided free of charge.</p>
+
+      <p style="margin-bottom:10px;"><strong>2. Data you provide and we process.</strong> With your explicit Google authorization, Rolodex reads your Gmail "Sent" mail to build a contact list and sends emails you approve. It stores, tied to your account: your profile, your contact list, a log of emails you send, and an encrypted Google token. It does not store the contents of your inbox.</p>
+
+      <p style="margin-bottom:10px;"><strong>3. Your data is shared with third parties to make the app work. You consent to this.</strong> To generate drafts and search the web, your contact information and email-related content are transmitted to and processed by <strong>Anthropic, PBC</strong> (the AI provider) and are subject to Anthropic's own terms and policies. Your data is also handled by the other service providers used to operate the site, which may include <strong>Google (Gmail &amp; sign-in), the website's cloud host, and its database provider</strong>, and any other processors reasonably necessary to run the service. By using Rolodex you acknowledge and consent to your data being viewed and processed by Anthropic and these other relevant parties.</p>
+
+      <p style="margin-bottom:10px;"><strong>4. Security, assumption of risk, and no liability for data loss or leaks.</strong> The service is provided "AS IS" and "AS AVAILABLE," without warranties of any kind. While reasonable measures are taken (encryption, access controls), <strong>no system is perfectly secure, and you use Rolodex entirely at your own risk.</strong> To the maximum extent permitted by law, the operator shall not be liable for any loss, damage, or harm of any kind — including from unauthorized access, security breaches, data leaks, or disclosure of your data — and you agree not to hold the operator responsible for any such event.</p>
+
+      <p style="margin-bottom:10px;"><strong>5. Your responsibilities.</strong> You will only connect accounts and data you are authorized to use, and you are responsible for the security of your own Google account. You are responsible for reviewing every email before it is sent.</p>
+
+      <p style="margin-bottom:10px;"><strong>6. Deleting your data.</strong> You may permanently delete all data stored about you, and revoke the app's access to your Google account, at any time using the "Disconnect &amp; delete my data" button on the Login page.</p>
+
+      <p style="margin-bottom:0;"><strong>7. Not professional advice.</strong> This is a small personal project, not a commercial service, and nothing here is legal or professional advice. These terms may be updated; continued use means acceptance.</p>
+    </div>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;margin:14px 0;">
+      <input type="checkbox" id="terms-agree" onchange="document.getElementById('terms-accept-btn').disabled=!this.checked" style="width:17px;height:17px;cursor:pointer;" />
+      I have read and agree to the Terms of Use &amp; Privacy Notice above.
+    </label>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-primary" id="terms-accept-btn" onclick="acceptTerms()" disabled>Agree &amp; continue</button>
+    </div>
+  </div>
+</div>
+
 
 <script>
 // ── Constants ──────────────────────────────────────────────
@@ -1332,7 +1363,7 @@ function finalizeMboxRows(byEmail) {
       email: rec.email,
       company: company,
       title: '',
-      industry: '',
+      industry: inferIndustry(company, [...rec.bizHits], rec.subjects),
       group: '',
       connection: thanked ? 'Corresponded & thanked'
                  : (netHit ? 'Networking / coffee chat'
@@ -1425,6 +1456,53 @@ const FIRM_NORMALIZE = {
   google: 'Google', goog: 'Google', meta: 'Meta', amazon: 'Amazon', microsoft: 'Microsoft',
   msft: 'Microsoft', apple: 'Apple',
 };
+
+// Known firm → industry, for confident classification of recognizable employers.
+const FIRM_INDUSTRY = {
+  'Morgan Stanley':'Investment Banking','Goldman Sachs':'Investment Banking','JPMorgan':'Investment Banking',
+  'JPMorgan Chase':'Investment Banking','Bank of America':'Investment Banking','Citi':'Investment Banking',
+  'Barclays':'Investment Banking','Deutsche Bank':'Investment Banking','UBS':'Investment Banking',
+  'Credit Suisse':'Investment Banking','Evercore':'Investment Banking','Lazard':'Investment Banking',
+  'Moelis & Company':'Investment Banking','Jefferies':'Investment Banking','PJT Partners':'Investment Banking',
+  'Centerview Partners':'Investment Banking','Houlihan Lokey':'Investment Banking','Wells Fargo':'Banking',
+  'Blackstone':'Private Equity','KKR':'Private Equity','Apollo Global Management':'Private Equity',
+  'The Carlyle Group':'Private Equity','Bain Capital':'Private Equity','BlackRock':'Asset Management',
+  'Bain & Company':'Consulting','Boston Consulting Group':'Consulting','McKinsey & Company':'Consulting',
+  'Deloitte':'Consulting','PwC':'Consulting','EY':'Consulting','KPMG':'Consulting',
+  'CBRE':'Real Estate','JLL':'Real Estate','Cushman & Wakefield':'Real Estate','Eastdil Secured':'Real Estate',
+  'Google':'Technology','Meta':'Technology','Amazon':'Technology','Microsoft':'Technology','Apple':'Technology',
+};
+
+// Content keyword → industry (checked in order; first match wins). Used when the
+// firm isn't in the known map — infers from what was discussed in the emails.
+const INDUSTRY_KEYWORDS = [
+  ['Private Equity',     ['private equity','buyout','lbo','portfolio company','growth equity']],
+  ['Venture Capital',    ['venture capital','seed round','series a','series b','term sheet','vc fund']],
+  ['Investment Banking', ['investment banking','equity research','capital markets','underwriting','sell-side','ipo','m&a','pitch','diligence','ecm','dcm']],
+  ['Consulting',         ['consulting','case interview','engagement manager','strategy consulting']],
+  ['Real Estate',        ['real estate','commercial real estate','cre','reit','leasing','property','acquisitions']],
+  ['Asset Management',   ['asset management','hedge fund','portfolio manager','long/short','buy-side']],
+  ['Law',                ['law firm','attorney','litigation','counsel','clerkship','associate attorney']],
+  ['Healthcare',         ['healthcare','pharmaceutical','biotech','clinical','oncology','medical']],
+  ['Technology',         ['software','engineer','product manager','startup','saas','developer','fintech']],
+  ['Accounting',         ['accounting','audit','tax advisory']],
+  ['Finance',            ['finance','banking','analyst','trading','markets','investment']],
+];
+
+// Infer a contact's industry from the firm they work at and the content of the
+// emails you exchanged (business-topic keyword hits + subject lines).
+function inferIndustry(company, bizHits, subjects) {
+  // 1. Recognizable firm → confident industry.
+  const norm = normalizeFirmName(company || '');
+  if (FIRM_INDUSTRY[norm]) return FIRM_INDUSTRY[norm];
+  if (company && FIRM_INDUSTRY[company]) return FIRM_INDUSTRY[company];
+  // 2. Otherwise infer from what was discussed.
+  const hay = ((bizHits || []).join(' ') + ' ' + (subjects || []).join(' ') + ' ' + (company || '')).toLowerCase();
+  for (const [industry, kws] of INDUSTRY_KEYWORDS) {
+    if (kws.some(k => hay.includes(k))) return industry;
+  }
+  return '';
+}
 
 function inferCompanyFromEmail(email) {
   const domain = (email.split('@')[1] || '').toLowerCase();
@@ -1890,8 +1968,15 @@ function generateForSelected() {
     showTab('login');
     return;
   }
-  // Build the working set from the full list, selected only
+  // Build the working set from the full list, selected only, then GROUP BY INDUSTRY
+  // so emails are generated and sent industry-by-industry (unknowns last).
   contacts = allContacts.filter(c => selectedIds.has(c.id));
+  contacts.sort((a, b) => {
+    const ai = (a.industry || '').trim(), bi = (b.industry || '').trim();
+    if (!ai && bi) return 1;      // put contacts with no industry after those with one
+    if (ai && !bi) return -1;
+    return ai.localeCompare(bi) || (a.name || '').localeCompare(b.name || '');
+  });
   if (!contacts.length) return;
   startProcessing();
 }
@@ -2805,13 +2890,33 @@ function resetApp() {
 // ── Startup ───────────────────────────────────────────────
 // Find out whether Gmail sending is available and whether we're signed in,
 // then land on the Login tab (or Contacts if already signed in).
+// ── Consent gate ───────────────────────────────────────────
+const TERMS_VERSION = 'v1';
+function showTermsGateIfNeeded() {
+  if (localStorage.getItem('ne_terms') !== TERMS_VERSION) {
+    document.getElementById('terms-gate').style.display = 'flex';
+  }
+}
+function acceptTerms() {
+  if (!document.getElementById('terms-agree').checked) return;
+  localStorage.setItem('ne_terms', TERMS_VERSION);
+  document.getElementById('terms-gate').style.display = 'none';
+  recordTermsAcceptance();
+}
+async function recordTermsAcceptance() {
+  if (!currentUser) return;  // records a server-side, timestamped consent for signed-in users
+  try { await fetch('/api/accept-terms', { method: 'POST' }); } catch(e) {}
+}
+
 (async function init() {
+  showTermsGateIfNeeded();  // block until the user agrees (first visit / new version)
   await refreshAuth();
   if (currentUser) {
     // Pull this user's saved profile, contacts, and sent history from the server.
     await loadServerProfile();
     await loadHistory();
     await loadServerContacts();  // shows the selection screen if a saved list exists
+    if (localStorage.getItem('ne_terms') === TERMS_VERSION) recordTermsAcceptance();
   }
   showTab(currentUser ? 'contacts' : 'login');
 })();

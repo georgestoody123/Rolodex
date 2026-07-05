@@ -64,6 +64,8 @@ async function initDb() {
       updated_at   TIMESTAMPTZ DEFAULT now()
     )
   `);
+  // Record of when the user accepted the Terms of Use (consent trail).
+  await pool.query(`ALTER TABLE gmail_users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ`);
   // Per-user profile (name, background, tone, writing style, etc.) as a JSON blob.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_profiles (
@@ -160,6 +162,11 @@ async function getUserRefreshToken(sub) {
   return decrypt(r.rows[0].refresh_token);
 }
 
+// Record that this user accepted the current Terms (timestamped consent trail).
+async function setTermsAccepted(sub) {
+  await getPool().query('UPDATE gmail_users SET terms_accepted_at = now() WHERE google_sub = $1', [sub]);
+}
+
 // Delete everything we hold for one user (used by the "delete my data" button).
 async function deleteAllUserData(sub) {
   const pool = getPool();
@@ -174,5 +181,5 @@ module.exports = {
   getProfile, saveProfile,
   getContacts, saveContacts,
   addSentEmail, getSentHistory,
-  deleteAllUserData,
+  deleteAllUserData, setTermsAccepted,
 };

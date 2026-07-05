@@ -275,6 +275,17 @@ app.post('/api/import-gmail', requireAuth, hourlyLimit(1000), async (req, res) =
   }
 });
 
+// Record that the signed-in user accepted the Terms (best-effort consent trail).
+app.post('/api/accept-terms', requireAuth, async (req, res) => {
+  try {
+    await db.setTermsAccepted(req.session.user.sub);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Record terms acceptance failed:', e.message);
+    res.status(500).json({ error: { message: 'Could not record acceptance.' } });
+  }
+});
+
 // ── Per-user profile (name, background, tone, writing style) ──────
 app.get('/api/profile', requireAuth, async (req, res) => {
   try {
