@@ -56,7 +56,7 @@
   .btn-primary { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #1a1509; border-color: var(--gold-deep); font-weight: 600; }
   .btn-primary:hover { background: linear-gradient(180deg, #efd695, var(--gold-bright)); }
   .btn-sm { padding: 5px 11px; font-size: 12px; }
-  .filter-chip.chip-active { background: var(--accent); color: #fff; border-color: transparent; }
+  .filter-chip.chip-active { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #1a1509; border-color: var(--gold-deep); font-weight: 600; }
   .reason-chip { display: inline-block; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 20px; margin: 2px 2px 0 0; white-space: nowrap; }
   .reason-coffee { background: var(--warning-bg); color: var(--warning); border: 1px solid #fde68a; }
   .reason-biz { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border); }
@@ -162,11 +162,25 @@
   .info-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 
   /* ── Old-money black & gold extras ── */
-  h1, h2, .modal h3, .drawer-header h3, .queue-header h2, .upload-zone h2 { font-family: var(--font-display); font-weight: 600; }
+  /* All headings share the display serif for a cohesive, formal look. */
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.01em; color: var(--text); }
+  /* Small gold uppercase labels used above section titles (magazine "eyebrow"). */
+  .section-eyebrow, .upload-eyebrow { font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-muted); }
+  .upload-eyebrow { color: var(--gold); margin-bottom: 10px; }
+  .section-eyebrow { margin-bottom: 3px; }
   .btn:hover { background: var(--surface-2); }
   .status-error { border-color: rgba(207,111,92,0.45) !important; }
-  a { color: var(--gold-bright); }
+  a { color: var(--gold-bright); text-decoration: none; }
+  a:hover { color: var(--gold-bright); }
   input[type="checkbox"] { accent-color: var(--gold); }
+  /* Top-right header link (Profile) */
+  .hdr-link { background: transparent; border-color: transparent; color: var(--text-secondary); letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; }
+  .hdr-link:hover { background: transparent; color: var(--gold-bright); }
+  .hdr-link-active { color: var(--gold-bright); border-bottom: 2px solid var(--gold); border-radius: 0; }
+  /* Consistent card section headings */
+  .card h3 { font-size: 15px; margin-bottom: 2px; }
+  .field-label { letter-spacing: 0.04em; }
 
   /* Tabs */
   .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-strong); margin-bottom: 1.75rem; }
@@ -207,14 +221,13 @@
       <p>Private networking · impeccably written</p>
     </div>
     <div class="header-right">
-      <button class="btn btn-sm" onclick="downloadTemplate()">Excel template</button>
+      <button class="btn btn-sm hdr-link" id="hdr-profile-btn" onclick="showTab('profile')">Profile</button>
     </div>
   </div>
 
   <!-- Tab navigation -->
   <div class="tabs">
     <button class="tab active" id="tab-btn-login" onclick="showTab('login')">Login</button>
-    <button class="tab" id="tab-btn-profile" onclick="showTab('profile')">Profile</button>
     <button class="tab" id="tab-btn-contacts" onclick="showTab('contacts')">Contacts</button>
     <button class="tab" id="tab-btn-send" onclick="showTab('send')">Send</button>
     <button class="tab" id="tab-btn-history" onclick="showTab('history')">History</button>
@@ -234,9 +247,9 @@
     <!-- Direct Gmail import (shown when signed in) -->
     <div id="gmail-import-card" style="display:none;border:1px solid var(--accent-border);background:var(--accent-bg);border-radius:12px;padding:16px 18px;margin-bottom:1rem;">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-        <span style="font-size:20px;">📥</span>
         <div style="flex:1;min-width:220px;">
-          <div style="font-weight:600;font-size:15px;">Build your list straight from Gmail</div>
+          <div class="section-eyebrow" style="color:var(--gold);">Directly from Gmail</div>
+          <div style="font-family:var(--font-display);font-weight:600;font-size:17px;">Build your list straight from Gmail</div>
           <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Scans your Sent folder and pulls out the people you've emailed — no download needed. We only read it to find contacts; nothing is stored except the list you build.</div>
           <div id="gmail-import-progress" style="display:none;font-size:12px;color:var(--accent);margin-top:8px;"></div>
         </div>
@@ -251,11 +264,12 @@
         ondragover="event.preventDefault();this.classList.add('drag')"
         ondragleave="this.classList.remove('drag')"
         ondrop="handleDrop(event)" style="padding:2rem 1.5rem;">
-        <span class="upload-icon">📊</span>
+        <div class="upload-eyebrow">Spreadsheet</div>
         <h2>Upload a contacts spreadsheet</h2>
         <p>Excel (.xlsx) or CSV with your contacts</p>
         <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose spreadsheet</button>
         <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])" />
+        <div style="margin-top:12px;"><a onclick="event.stopPropagation();downloadTemplate()" style="font-size:12px;cursor:pointer;border-bottom:1px solid var(--accent-border);">Download a starter Excel template</a></div>
       </div>
 
       <!-- Path B: Build from email -->
@@ -263,7 +277,7 @@
         ondragover="event.preventDefault();this.classList.add('drag')"
         ondragleave="this.classList.remove('drag')"
         ondrop="handleMboxDrop(event)" style="padding:2rem 1.5rem;">
-        <span class="upload-icon">📧</span>
+        <div class="upload-eyebrow">Sent email</div>
         <h2>Build from your sent email</h2>
         <p>Upload a Google Takeout .zip or .mbox of sent mail</p>
         <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('mbox-input').click()">Choose email export</button>
@@ -272,8 +286,7 @@
     </div>
 
     <div class="template-hint" style="max-width:none;">
-      <span>💡</span>
-      <span><strong>Spreadsheet option:</strong> needs columns First Name, Last Name, Company, Position, Industry, Group, Connection, Notes (click "Excel template" above for a starter file). &nbsp; <strong>Email option:</strong> in Google Takeout, export Gmail, which gives a .zip containing a "Sent.mbox" file. Drop that whole .zip here. Everything is read on your computer, nothing is uploaded.</span>
+      <span><strong>Spreadsheet option:</strong> needs columns First Name, Last Name, Company, Position, Industry, Group, Connection, Notes (use "Download a starter Excel template" above). &nbsp; <strong>Email option:</strong> in Google Takeout, export Gmail, which gives a .zip containing a "Sent.mbox" file. Drop that whole .zip here. Everything is read on your computer, nothing is uploaded.</span>
     </div>
 
     <div id="mbox-progress" style="display:none;margin-top:1rem;" class="card">
@@ -301,7 +314,7 @@
         <button class="btn btn-sm" onclick="mboxSelectAll(false)">Deselect all shown</button>
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap;">
           <input type="checkbox" id="clean-firms-toggle" onchange="onCleanFirmsToggle(this.checked)" style="width:15px;height:15px;cursor:pointer;" />
-          🔎 Clean up firm names<span id="clean-firms-status" style="color:var(--accent);"></span>
+          Clean up firm names<span id="clean-firms-status" style="color:var(--accent);"></span>
         </label>
         <div style="margin-left:auto;">
           <button class="btn btn-primary btn-sm" id="mbox-continue-btn" onclick="confirmMboxContacts()" disabled>Continue to selection →</button>
@@ -448,7 +461,7 @@
         <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
           <span id="bulk-progress" style="font-size:12px;color:var(--text-muted);"></span>
           <button class="btn btn-sm" id="open-all-btn" onclick="openAllInGmail()" disabled>Open all in Gmail ↗</button>
-          <button class="btn btn-primary btn-sm" id="send-approved-btn" onclick="sendApproved()" disabled>✆ Send approved →</button>
+          <button class="btn btn-primary btn-sm" id="send-approved-btn" onclick="sendApproved()" disabled>Send approved →</button>
         </div>
       </div>
       <table class="contact-table">
@@ -469,7 +482,7 @@
 
   <!-- Empty state shown on the Send tab before any emails are generated -->
   <div id="send-empty" class="empty">
-    <div class="empty-icon">✉</div>
+    <div class="empty-icon" style="font-size:1.3rem;color:var(--gold);opacity:0.7;">◆</div>
     <div style="font-family:var(--font-display);font-size:18px;color:var(--text-secondary);margin-bottom:4px;">No emails to send yet</div>
     <div style="font-size:13px;">Head to the <strong>Contacts</strong> tab, choose who to reach, and generate drafts. They'll appear here ready to send.</div>
   </div>
@@ -545,7 +558,7 @@
         <h2>Sent history</h2>
         <span class="count-pill" id="history-count">0 sent</span>
         <div style="margin-left:auto;">
-          <button class="btn btn-sm" onclick="loadHistory()">↻ Refresh</button>
+          <button class="btn btn-sm" onclick="loadHistory()">Refresh</button>
         </div>
       </div>
       <table class="contact-table">
@@ -560,7 +573,7 @@
         <tbody id="history-body"></tbody>
       </table>
       <div id="history-empty" class="empty" style="display:none;">
-        <div class="empty-icon">✉</div>
+        <div class="empty-icon" style="font-size:1.3rem;color:var(--gold);opacity:0.7;">◆</div>
         <div style="font-family:var(--font-display);font-size:18px;color:var(--text-secondary);margin-bottom:4px;">Nothing sent yet</div>
         <div style="font-size:13px;">Emails you send will be logged here, so you can keep track of who you've reached and when.</div>
       </div>
@@ -596,9 +609,9 @@
       </div>
     </div>
     <div class="drawer-footer">
-      <button class="btn btn-sm" onclick="copyDrawerEmail()">⎘ Copy</button>
+      <button class="btn btn-sm" onclick="copyDrawerEmail()">Copy</button>
       <button class="btn btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
-      <button class="btn btn-primary btn-sm" id="drawer-send-btn" onclick="sendDrawerViaGmail()">✆ Send via Gmail</button>
+      <button class="btn btn-primary btn-sm" id="drawer-send-btn" onclick="sendDrawerViaGmail()">Send via Gmail</button>
     </div>
   </div>
 </div>
@@ -834,6 +847,9 @@ function showTab(name) {
     if (panel) panel.classList.toggle('active', t === name);
     if (btn) btn.classList.toggle('active', t === name);
   });
+  // Profile lives in the top-right, not the tab row — reflect its active state there.
+  const hdrProfile = document.getElementById('hdr-profile-btn');
+  if (hdrProfile) hdrProfile.classList.toggle('hdr-link-active', name === 'profile');
   if (name === 'profile') loadProfileFields();
   if (name === 'history') loadHistory();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2055,9 +2071,9 @@ function renderContactProfile(c) {
     +   '</div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
-    +   '<button class="btn btn-sm" onclick="openLinkedInSearch(' + c.id + ')">🔎 Find on LinkedIn</button>'
+    +   '<button class="btn btn-sm" onclick="openLinkedInSearch(' + c.id + ')">Find on LinkedIn</button>'
     +   (linkedinSaved ? '<a class="btn btn-sm btn-primary" href="' + escapeHtml(safeHref(c.linkedinUrl)) + '" target="_blank" rel="noopener noreferrer">View LinkedIn profile ↗</a>' : '')
-    +   (c.email ? '<button class="btn btn-sm" onclick="showContactProfileEmail(' + c.id + ')">✉ Draft an email</button>' : '')
+    +   (c.email ? '<button class="btn btn-sm" onclick="showContactProfileEmail(' + c.id + ')">Draft an email</button>' : '')
     + '</div>'
     + '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
     +   '<input type="text" id="profile-linkedin-input" value="' + escapeHtml(c.linkedinUrl || '') + '" placeholder="Paste their LinkedIn profile URL to save it" style="flex:1;min-width:200px;font-size:12px;padding:6px 9px;" />'
@@ -2085,7 +2101,7 @@ function renderContactProfile(c) {
     + '<div class="card">'
     +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
     +     '<h3 style="font-size:14px;flex:1;">Recent updates & news</h3>'
-    +     '<button class="btn btn-sm" onclick="loadContactIntel(' + c.id + ', true)">↻ Refresh</button>'
+    +     '<button class="btn btn-sm" onclick="loadContactIntel(' + c.id + ', true)">Refresh</button>'
     +   '</div>'
     +   '<div id="profile-intel">' + intelHtml + '</div>'
     + '</div>';
@@ -2516,7 +2532,7 @@ function copyDrawerEmail() {
   const body = document.getElementById('drawer-body').value;
   navigator.clipboard.writeText(`Subject: ${subj}\n\n${body}`).then(() => {
     const btn = event.target;
-    btn.textContent = '✓ Copied'; setTimeout(()=>btn.textContent='⎘ Copy', 2000);
+    btn.textContent = '✓ Copied'; setTimeout(()=>btn.textContent='Copy', 2000);
   });
 }
 
