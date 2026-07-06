@@ -304,6 +304,7 @@
         <div style="flex:1;min-width:200px;">
           <div style="font-size:15px;font-weight:600;">Review your network from email</div>
           <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="mbox-review-sub"></div>
+          <div style="font-size:12px;color:var(--gold);margin-top:6px;display:none;" id="style-learn-status"></div>
         </div>
         <button class="btn btn-sm" onclick="resetApp()">✕ Start over</button>
       </div>
@@ -525,6 +526,7 @@
       </div>
       <div class="modal-field">
         <label>Your writing style</label>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">The app learns your voice automatically whenever you import contacts from a Gmail scan or an .mbox file, using the networking emails you actually sent. You can also feed it a .zip here, or edit everything below by hand.</div>
         <div style="border:1px dashed var(--border-strong);border-radius:var(--radius);padding:14px;text-align:center;margin-bottom:8px;">
           <div style="font-size:13px;font-weight:500;margin-bottom:2px;">Upload a .zip of your sent emails</div>
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">The app reads them on your computer to learn your tone. Nothing is uploaded anywhere.</div>
@@ -532,7 +534,9 @@
           <input type="file" id="zip-input" accept=".zip" style="display:none;" onchange="handleEmailZip(this.files[0])" />
           <div id="zip-status" style="font-size:12px;margin-top:8px;"></div>
         </div>
-        <label style="margin-top:6px;">Style sample the app will match (auto-filled from your zip, or paste/edit manually)</label>
+        <label style="margin-top:6px;">Voice profile (how the app describes your writing — edit freely)</label>
+        <textarea id="set-style-voice" rows="4" placeholder="Auto-filled when you import your emails. e.g. Opens with 'Hi [first name],' then a one-line personal hook. Short, direct sentences…"></textarea>
+        <label style="margin-top:6px;">Real emails the app will imitate (auto-filled from your imports, or paste/edit manually)</label>
         <textarea id="set-style" rows="6" placeholder="Hi Sarah,&#10;&#10;Hope you're doing well! Just wanted to check in…"></textarea>
         <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Tip: in Google Takeout, export Gmail as .zip. Or zip up a few .eml / .txt emails you've sent.</div>
       </div>
@@ -1075,6 +1079,7 @@ async function handleMboxFile(file) {
 
     // Stream the blob in chunks, processing one message at a time
     const byEmail = {};
+    resetStyleCollector();
     await streamMboxBlob(mboxBlob, (msg) => processMboxMessage(msg, byEmail), (done, total) => {
       const mb = (b) => (b / (1024*1024)).toFixed(0);
       ptext.textContent = 'Scanning your sent mail… ' + mb(done) + ' / ' + mb(total) + ' MB';
@@ -1184,6 +1189,130 @@ function matchesAny(textLower, list) {
   return hits;
 }
 
+// ── Writing-style learning (runs during every import) ─────────────
+// While an import scans your sent mail for contacts, we also keep the emails
+// YOU wrote that read like real networking notes (thank-yous, coffee-chat
+// asks — the same genre this app writes). After the scan, the best ones become
+// the style samples and a distilled "voice profile" the email writer imitates,
+// so drafts sound like you instead of like AI.
+let styleCandidates = [];
+let stylePlainKept = 0;   // non-networking emails kept as a fallback pool
+
+function resetStyleCollector() { styleCandidates = []; stylePlainKept = 0; }
+
+// Cheap pre-check so huge scans don't waste time cleaning every message:
+// networking-signal emails are always worth keeping; plain ones only until
+// the fallback pool is full.
+function shouldCollectStyle(hasSignal) {
+  if (styleCandidates.length >= 400) return false;
+  return hasSignal || stylePlainKept < 40;
+}
+
+// Is this cleaned body a usable style sample? Real prose only — no MIME junk,
+// no newsletters, no attachment garbage.
+function isUsableStyleSample(text) {
+  if (!text) return false;
+  if (text.length < 80 || text.length > 2500) return false;
+  if (/content-type:|content-transfer-encoding|charset=|<html|multipart\//i.test(text)) return false;
+  if (/unsubscribe|view this email in your browser/i.test(text)) return false;
+  // Base64/attachment junk shows up as very long unbroken "words"
+  if (/\S{60,}/.test(text.replace(/https?:\/\/\S+/g, ''))) return false;
+  // Real prose has plenty of spaces
+  if ((text.match(/ /g) || []).length < 15) return false;
+  return true;
+}
+
+function collectStyleSample(body, sig) {
+  const text = (body || '').trim();
+  if (!isUsableStyleSample(text)) return;
+  let score = 0;
+  if (sig.thanked)  score += 3;   // exactly the genre of email this app writes
+  if (sig.netCount) score += 2;
+  if (sig.bizCount) score += 1;
+  if (score === 0) stylePlainKept++;
+  if (text.length >= 150 && text.length <= 900) score += 1;  // ideal length
+  styleCandidates.push({ text, score });
+}
+
+// Best samples first; skip near-duplicates (the same template you reuse would
+// otherwise crowd out variety).
+function pickStyleSamples(n) {
+  const seen = new Set();
+  const out = [];
+  const sorted = styleCandidates.slice().sort((a, b) => b.score - a.score);
+  for (const c of sorted) {
+    const key = c.text.slice(0, 60).toLowerCase().replace(/\s+/g, ' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c.text);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+// One cheap Haiku call: turn sample emails into a compact description of how
+// this person writes. Returns { voice_profile, signoff }.
+async function distillVoiceProfile(samples) {
+  const prompt = 'Here are real emails I have written and sent:\n\n"""\n'
+    + samples.join('\n\n=====\n\n') + '\n"""\n\n'
+    + 'Study how I write and return ONLY valid JSON, no markdown fences:\n'
+    + '{"voice_profile": "...", "signoff": "..."}\n\n'
+    + 'voice_profile: a 100-150 word style guide written as instructions, capturing exactly how I write: '
+    + 'my greeting format, how I open, typical sentence length and rhythm, formality level, whether I use contractions, '
+    + 'punctuation habits, specific words and phrases I actually reuse (quote them), how I ask for someone\'s time, '
+    + 'and how I close. Be concrete and specific to ME, not generic writing advice.\n'
+    + 'signoff: the exact closing word or phrase I use most before my name (e.g. "Best"), without the comma.';
+
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!res.ok) throw new Error('API ' + res.status);
+  const data = await res.json();
+  const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  return JSON.parse(text.replace(/```json\n?|```/g,'').trim());
+}
+
+// After an import lands on the review screen, learn the user's voice from the
+// samples gathered during the scan. Non-blocking — runs while they review.
+async function learnStyleFromImport() {
+  const statusEl = document.getElementById('style-learn-status');
+  const samples = pickStyleSamples(8);
+  if (!samples.length) { if (statusEl) statusEl.style.display = 'none'; return; }
+
+  // The verbatim samples help even if the AI summary below fails
+  settings.styleExamples = samples.slice(0, 4).join('\n\n---\n\n');
+
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Also learning your writing style from ' + samples.length + ' emails you sent…';
+  }
+
+  try {
+    const parsed = await distillVoiceProfile(samples);
+    if (parsed.voice_profile) settings.styleVoice = String(parsed.voice_profile).trim();
+    // If the sign-off it found matches one of the profile options, adopt it
+    const so = String(parsed.signoff || '').replace(/,+$/, '').trim().toLowerCase();
+    const match = ['Best','Cheers','Warm regards','Talk soon','Thanks'].find(a => a.toLowerCase() === so);
+    if (match) settings.signoff = match;
+    if (statusEl) statusEl.textContent =
+      '✓ Learned your writing style from your sent emails. Drafts will now sound like you — view or edit this under Profile.';
+  } catch (e) {
+    console.warn('Voice profile distillation failed; keeping raw samples only', e);
+    if (statusEl) statusEl.textContent =
+      '✓ Saved ' + Math.min(4, samples.length) + ' of your sent emails as writing-style samples (see Profile).';
+  }
+
+  localStorage.setItem('ne_settings', JSON.stringify(settings));
+  saveServerProfile();
+  loadProfileFields();
+}
+
 // Process a single mbox message, aggregating recipients into byEmail
 function processMboxMessage(msg, byEmail) {
   if (!msg.trim()) return;
@@ -1204,6 +1333,18 @@ function processMboxMessage(msg, byEmail) {
   const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
   const thanked = isThankYouMessage(subject, bodySnippet);
+
+  // Style learning: only from mail I actually wrote. The From check guards
+  // against a full-mailbox export that includes received mail.
+  if (shouldCollectStyle(thanked || netHits.length > 0 || bizHits.length > 0)) {
+    const fromLine = matchHeader(headers, 'From');
+    const mine = !currentUser || !fromLine
+      || fromLine.toLowerCase().includes((currentUser.email || '').toLowerCase());
+    if (mine) {
+      collectStyleSample(extractEmailBody(msg.slice(0, bodyStart + 20000)),
+        { thanked, netCount: netHits.length, bizCount: bizHits.length });
+    }
+  }
 
   for (const r of parseAddresses(toLine)) {
     if (!r.email) continue;
@@ -1239,6 +1380,12 @@ function processGmailMessage(msg, byEmail) {
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
   const thanked = isThankYouMessage(subject, msg.body || '');
 
+  // Style learning: everything here came from the SENT label, so it's all mine
+  if (shouldCollectStyle(thanked || netHits.length > 0 || bizHits.length > 0)) {
+    collectStyleSample(cleanEmailText(msg.body || ''),
+      { thanked, netCount: netHits.length, bizCount: bizHits.length });
+  }
+
   for (const r of parseAddresses(toLine)) {
     if (!r.email) continue;
     const key = r.email.toLowerCase();
@@ -1273,6 +1420,7 @@ async function importFromGmail() {
   prog.textContent = 'Starting scan of your Sent folder…';
 
   const byEmail = {};
+  resetStyleCollector();
   let pageToken = null, scanned = 0;
   try {
     do {
@@ -1547,6 +1695,7 @@ function showMboxReview(rows) {
     + thankedCount + ' people you sent a thank-you or follow-up note to (tagged "thanked"), then those with clear coffee-chat language or business topics. A work email address alone is no longer enough, so casual and one-off contacts are filtered out. The tags show why each was flagged. Check anyone the app missed, uncheck anyone who does not belong, fix company names, then continue.';
   renderMboxReview();
   maybeAutoCleanFirms();
+  learnStyleFromImport();  // async; runs while the user reviews contacts
 }
 
 function renderMboxReview() {
@@ -2338,6 +2487,9 @@ async function generateEmail(contact) {
   const signoff = settings.signoff || 'Best';
   const tone = settings.tone || 'warm and casual';
   const maxLen = settings.maxLength || 'under 150 words';
+  const voiceBlock = settings.styleVoice
+    ? '\n\nMY VOICE — how I actually write, learned from my real sent emails. When this conflicts with any generic rule above, MY VOICE wins:\n' + settings.styleVoice
+    : '';
   const styleBlock = settings.styleExamples
     ? '\n\nIMPORTANT — match MY writing style. Below are real emails I have written. Mirror my greeting style, sentence length, level of formality, punctuation habits, and sign-off. Do not copy their content, only their voice:\n"""\n' + settings.styleExamples + '\n"""'
     : '';
@@ -2418,7 +2570,7 @@ async function generateEmail(contact) {
     '- It is fine to start a sentence with And, But, or So. It is fine to be slightly casual.',
     '- Do not over-explain or be overly polished. A tiny bit of informality is good.',
     '- Write like you are messaging a peer you genuinely know, not drafting a press release.',
-    '- Sign off: "' + signoff + ',\n' + myName + '"' + styleBlock,
+    '- Sign off: "' + signoff + ',\n' + myName + '"' + voiceBlock + styleBlock,
     '',
     subjectInstruction,
     '',
@@ -2707,6 +2859,7 @@ function loadProfileFields() {
   document.getElementById('set-subject-style').value = settings.subjectStyle || '';
   document.getElementById('set-signoff').value = settings.signoff || 'Best';
   document.getElementById('set-tone').value = settings.tone || 'warm and casual';
+  document.getElementById('set-style-voice').value = settings.styleVoice || '';
   document.getElementById('set-style').value = settings.styleExamples || '';
   document.getElementById('set-length').value = settings.maxLength || 'under 150 words';
 }
@@ -2780,6 +2933,18 @@ async function handleEmailZip(file) {
     const styleText = samples.join('\n\n---\n\n');
     document.getElementById('set-style').value = styleText;
 
+    // Also distill a voice profile from the samples (best-effort — the raw
+    // samples above already work on their own if this call fails).
+    status.textContent = 'Read ' + emailTexts.length + ' emails — writing your voice profile…';
+    try {
+      const parsed = await distillVoiceProfile(samples);
+      if (parsed.voice_profile) {
+        document.getElementById('set-style-voice').value = String(parsed.voice_profile).trim();
+      }
+    } catch (e) {
+      console.warn('Voice profile distillation failed; keeping raw samples only', e);
+    }
+
     status.style.color = 'var(--success)';
     status.textContent = '✓ Learned your style from ' + emailTexts.length + ' email'
       + (emailTexts.length !== 1 ? 's' : '') + ' (using ' + samples.length + ' as samples). Click Save to apply.';
@@ -2793,16 +2958,18 @@ async function handleEmailZip(file) {
 // Pull the human-written body out of a raw email, stripping headers and quoted replies
 function extractEmailBody(raw) {
   if (!raw) return '';
-  let text = raw;
+  // Headers end at the first blank line — take everything after
+  const split = raw.split(/\r?\n\r?\n/);
+  return cleanEmailText(split.length > 1 ? split.slice(1).join('\n\n') : raw);
+}
+
+// Clean an already-headerless email body: decode common encodings, strip HTML,
+// cut quoted reply chains. Shared by the zip path and the import style learner.
+function cleanEmailText(text) {
+  if (!text) return '';
 
   // Decode quoted-printable soft breaks and common encodings (lightweight)
   text = text.replace(/=\r?\n/g, '').replace(/=20/g, ' ').replace(/=E2=80=99/g, "'");
-
-  // Headers end at the first blank line — take everything after
-  const split = text.split(/\r?\n\r?\n/);
-  if (split.length > 1) {
-    text = split.slice(1).join('\n\n');
-  }
 
   // Strip HTML tags if it's an HTML email
   if (/<html|<body|<div|<p>/i.test(text)) {
@@ -2838,6 +3005,7 @@ function saveSettings() {
   settings.subjectStyle = document.getElementById('set-subject-style').value.trim();
   settings.signoff = document.getElementById('set-signoff').value;
   settings.tone = document.getElementById('set-tone').value;
+  settings.styleVoice = document.getElementById('set-style-voice').value.trim();
   settings.styleExamples = document.getElementById('set-style').value.trim();
   settings.maxLength = document.getElementById('set-length').value;
   localStorage.setItem('ne_settings', JSON.stringify(settings));
