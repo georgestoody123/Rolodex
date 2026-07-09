@@ -592,12 +592,7 @@
     <div class="drawer-header">
       <div id="drawer-avatar" class="avatar"></div>
       <h3 id="drawer-name"></h3>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn btn-sm" id="drawer-prev" onclick="navigateDrawer(-1)" title="Previous email (← key)">← Prev</button>
-        <span id="drawer-position" style="font-size:12px;color:var(--text-muted);min-width:78px;text-align:center;white-space:nowrap;"></span>
-        <button class="btn btn-sm" id="drawer-next" onclick="navigateDrawer(1)" title="Next email (→ key)">Next →</button>
-        <button class="btn btn-ghost btn-sm" onclick="closeDrawerDirect()" title="Close (Esc)">✕</button>
-      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeDrawerDirect()" title="Close (Esc)">✕</button>
     </div>
     <div class="drawer-body">
       <div id="drawer-meta" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
@@ -621,10 +616,17 @@
         The article shows as a link woven into a sentence (written as <code>[words](link)</code> in the body above). It becomes clickable in the sent email — the preview shows the result. "Open in Gmail" and "Copy" use a plain-text version where the address is shown in full.
       </div>
     </div>
-    <div class="drawer-footer">
-      <button class="btn btn-sm" onclick="copyDrawerEmail()">Copy</button>
-      <button class="btn btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
-      <button class="btn btn-primary btn-sm" id="drawer-send-btn" onclick="sendDrawerViaGmail()">Send via Gmail</button>
+    <div class="drawer-footer" style="flex-wrap:wrap;row-gap:10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-sm" id="drawer-prev" onclick="navigateDrawer(-1)" title="Previous email (← key)">← Prev</button>
+        <span id="drawer-position" style="font-size:12px;color:var(--text-muted);min-width:78px;text-align:center;white-space:nowrap;"></span>
+        <button class="btn btn-sm" id="drawer-next" onclick="navigateDrawer(1)" title="Next email (→ key)">Next →</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+        <button class="btn btn-sm" onclick="copyDrawerEmail()">Copy</button>
+        <button class="btn btn-sm" onclick="openDrawerInGmail()">Open in Gmail ↗</button>
+        <button class="btn btn-primary btn-sm" id="drawer-send-btn" onclick="sendDrawerViaGmail()">Send via Gmail</button>
+      </div>
     </div>
   </div>
 </div>
