@@ -905,6 +905,10 @@ function bodyToHtml(body) {
     last = md.lastIndex;
   }
   html += escAndLinkBare(body.slice(last));
+  // Preserve leading indentation (tabs/spaces) per line, which HTML would
+  // otherwise collapse — this keeps the first-paragraph indent visible.
+  html = html.replace(/^[\t ]+/gm, (ws) =>
+    ws.replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;').replace(/ /g, '&nbsp;'));
   return html.replace(/\r?\n/g, '<br>');
 }
 
@@ -2689,8 +2693,9 @@ async function generateEmail(contact) {
   const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
   const clean = text.replace(/```json\n?|```/g,'').trim();
   const result = JSON.parse(clean);
-  // Safety net: strip dashes the model may have slipped in
-  if (result.body)    result.body    = deDashBody(result.body);
+  // Safety net: strip dashes the model may have slipped in, then normalize the
+  // greeting comma and indent the first paragraph.
+  if (result.body)    result.body    = formatEmailBody(deDashBody(result.body));
   if (result.subject) result.subject = deDash(result.subject);
   result._article = article;
   return result;
@@ -2708,10 +2713,11 @@ function deDash(s) {
   // Spaced hyphen used as a pause ( word - word ) -> comma
   out = out.replace(/ - /g, ', ');
   // Clean doubled punctuation that can result, e.g. ",," or ", ." or " ,"
+  // NOTE: we deliberately do NOT convert an end-of-line comma to a period —
+  // that clobbered the salutation ("Hi Jane,") and the sign-off ("Best,").
   out = out.replace(/,\s*,/g, ',')
            .replace(/\s+,/g, ',')
            .replace(/,\s*\./g, '.')
-           .replace(/,\s*$/gm, '.')
            .replace(/\(\s*,\s*/g, '(');
   return out;
 }
@@ -2732,6 +2738,36 @@ function deDashBody(s) {
   return out.replace(/\u241f(\d+)\u241f/g, (m, i) => links[+i]);
 }
 
+// Final formatting pass for a drafted email body:
+//  - make sure the greeting line ends with a comma (not a period or nothing)
+//  - indent the first body paragraph one tab in from the salutation
+function formatEmailBody(body) {
+  if (!body) return body;
+  const lines = body.split('\n');
+
+  // The first non-empty line is the salutation.
+  let s = 0;
+  while (s < lines.length && !lines[s].trim()) s++;
+  if (s >= lines.length) return body;
+
+  const greetingRe = /^(hi|hello|hey|dear|good\s+(?:morning|afternoon|evening))\b/i;
+  if (greetingRe.test(lines[s].trim())) {
+    // Normalize whatever punctuation the greeting ends with to a single comma.
+    lines[s] = lines[s].replace(/[\s.,;:!]+$/, '') + ',';
+  }
+
+  // Indent the first body paragraph, but only when the salutation sits on its
+  // own line (a blank line follows it) so we never indent a stray line.
+  if (s + 1 < lines.length && lines[s + 1].trim() === '') {
+    let b = s + 2;
+    while (b < lines.length && !lines[b].trim()) b++;
+    if (b < lines.length && !/^[\t ]/.test(lines[b])) {
+      lines[b] = '\t' + lines[b];
+    }
+  }
+  return lines.join('\n');
+}
+
 function fallbackEmail(c) {
   const myName = settings.name || '[Your name]';
   const signoff = settings.signoff || 'Best';
@@ -2739,9 +2775,10 @@ function fallbackEmail(c) {
   // Build a simple bracketed tag from the most relevant shared signal we have
   const tag = (c.connection || c.group || c.industry || 'Cornell').trim();
   const subject = '[' + tag + '] Catching up soon';
+  const body = 'Hi ' + first + ',\n\nHope you\'re doing well. It\'s been a while and you crossed my mind, so I figured I\'d reach out.\n\nCurious what\'s been keeping you busy at ' + (c.company||'your company') + ' lately. Would love to catch up if you have fifteen minutes sometime soon.\n\n' + signoff + ',\n' + myName;
   return {
     subject: subject,
-    body: 'Hi ' + first + ',\n\nHope you\'re doing well. It\'s been a while and you crossed my mind, so I figured I\'d reach out.\n\nCurious what\'s been keeping you busy at ' + (c.company||'your company') + ' lately. Would love to catch up if you have fifteen minutes sometime soon.\n\n' + signoff + ',\n' + myName,
+    body: formatEmailBody(body),
     article_headline: '', article_url: '', article_source: '', _article: null
   };
 }
