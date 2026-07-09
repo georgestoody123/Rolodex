@@ -606,10 +606,14 @@
       </div>
       <div>
         <span class="field-label">Body — edit freely before sending</span>
-        <textarea id="drawer-body" rows="14"></textarea>
+        <textarea id="drawer-body" rows="14" oninput="updateDrawerPreview()"></textarea>
+      </div>
+      <div>
+        <span class="field-label">Preview — how the sent email will look</span>
+        <div id="drawer-preview" style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:13px;line-height:1.55;min-height:40px;"></div>
       </div>
       <div class="info-box">
-        Tip: Click "Open in Gmail" to launch a pre-filled compose window. Your edits above will carry over.
+        The article shows as a link woven into a sentence (written as <code>[words](link)</code> in the body above). It becomes clickable in the sent email — the preview shows the result. "Open in Gmail" and "Copy" use a plain-text version where the address is shown in full.
       </div>
     </div>
     <div class="drawer-footer">
@@ -861,6 +865,56 @@ function safeHref(u) {
   return /^https?:\/\//i.test(String(u || '').trim()) ? u : '#';
 }
 
+// ── Email body → HTML / plain text ────────────────────────
+// The drafts store the article as an inline markdown link [text](url). These
+// turn that (and any bare URLs) into a clickable HTML body for sending, and a
+// clean plain-text version for the Gmail-compose fallback and the text part.
+function emailAnchor(url, text) {
+  return '<a href="' + escapeHtml(safeHref(url)) + '" target="_blank" rel="noopener noreferrer">'
+    + escapeHtml(text) + '</a>';
+}
+
+function bodyToHtml(body) {
+  if (body == null) body = '';
+  // Tokenize the RAW body into text vs. markdown-link pieces (so we escape once).
+  const md = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let html = '', last = 0, m;
+  const escAndLinkBare = (txt) => {
+    // Escape plain text, then auto-link any bare http(s) URLs inside it.
+    const bare = /(https?:\/\/[^\s]+)/g;
+    let out = '', l = 0, um;
+    while ((um = bare.exec(txt)) !== null) {
+      let url = um[1], trail = '';
+      const t = url.match(/[.,);:]+$/);           // don't swallow trailing punctuation
+      if (t) { trail = t[0]; url = url.slice(0, -trail.length); }
+      out += escapeHtml(txt.slice(l, um.index)) + emailAnchor(url, url) + escapeHtml(trail);
+      l = bare.lastIndex;
+    }
+    return out + escapeHtml(txt.slice(l));
+  };
+  while ((m = md.exec(body)) !== null) {
+    html += escAndLinkBare(body.slice(last, m.index));
+    html += emailAnchor(m[2], m[1]);
+    last = md.lastIndex;
+  }
+  html += escAndLinkBare(body.slice(last));
+  return html.replace(/\r?\n/g, '<br>');
+}
+
+// A markdown link becomes "text (url)" so the address stays visible/clickable
+// in plain-text contexts (Gmail compose URLs, the text/plain MIME part).
+function bodyToPlain(body) {
+  if (body == null) body = '';
+  return body.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (m, text, url) => text + ' (' + url + ')');
+}
+
+// Wrap the HTML fragment in a minimal, email-safe container (readable font +
+// dark text) so it renders well in the recipient's inbox regardless of client.
+function wrapEmailHtml(inner) {
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222;">'
+    + inner + '</div>';
+}
+
 // Ask the backend whether sending is available and who (if anyone) is signed in.
 async function refreshAuth() {
   try {
@@ -980,7 +1034,7 @@ async function sendDrawerViaGmail() {
     const res = await fetch('/api/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: c.email, subject, body, toName: c.name, company: c.company })
+      body: JSON.stringify({ to: c.email, subject, body: bodyToPlain(body), html: wrapEmailHtml(bodyToHtml(body)), toName: c.name, company: c.company })
     });
     const data = await res.json();
     if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
@@ -1260,7 +1314,9 @@ async function distillVoiceProfile(samples) {
     + 'voice_profile: a 100-150 word style guide written as instructions, capturing exactly how I write: '
     + 'my greeting format, how I open, typical sentence length and rhythm, formality level, whether I use contractions, '
     + 'punctuation habits, specific words and phrases I actually reuse (quote them), how I ask for someone\'s time, '
-    + 'and how I close. Be concrete and specific to ME, not generic writing advice.\n'
+    + 'and how I close. Be concrete and specific to ME, not generic writing advice. '
+    + 'Describe my timeless style only. Do NOT include season-specific or holiday greetings '
+    + '(new year, holidays, "start to the year") as a rule, since those depend on when I sent the email, not how I write.\n'
     + 'signoff: the exact closing word or phrase I use most before my name (e.g. "Best"), without the comma.';
 
   const res = await fetch('/api/claude', {
@@ -2515,16 +2571,30 @@ async function generateEmail(contact) {
       + '- URL: '       + article.url      + '\n'
       + '- Key finding: ' + article.key_finding + '\n'
       + '- Why relevant: ' + article.why_relevant + '\n'
-      + '\nIMPORTANT: Mention this article naturally in the body. '
-      + 'After referencing it, include the URL on its own line with a natural lead-in like '
-      + '"Saw this and thought of you: ' + article.url + '" '
-      + 'or "Worth a read: ' + article.url + '". '
-      + 'Raw URL only — no markdown link syntax.';
+      + '\nIMPORTANT — reference this article INSIDE a sentence as a single inline link, NOT as a separate line or trailing paragraph. '
+      + 'Use markdown link syntax [anchor text](' + article.url + ') where the anchor text is a few natural words woven into the sentence. '
+      + 'For example: "saw [this piece on where the space is heading](' + article.url + ') and thought of you" '
+      + 'or "there was [a good read on it](' + article.url + ') recently that stuck with me". '
+      + 'Put the exact URL ' + article.url + ' inside the parentheses. '
+      + 'Do NOT paste the raw URL on its own line, and do NOT add a separate "Worth a read:" or "Saw this:" line. '
+      + 'This one markdown link is the ONLY place markdown is allowed anywhere in the email.';
   } else {
     articleBlock = '\nNo article found. Write a personalized email about general trends in '
       + (contact.industry || 'their industry')
       + ' without fabricating an article or URL.';
   }
+
+  // What time of year it actually is right now. The style samples may have been
+  // written in a different season (e.g. holidays), so we tell the model to write
+  // for TODAY and not parrot a stale seasonal greeting from those examples.
+  const dateBlock =
+    'TODAY\'S DATE is ' + new Date().toLocaleDateString('en-US',
+      { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) + '. '
+    + 'Write the email for THIS point in the year. The writing-style samples above may have been sent in a '
+    + 'different season, so do NOT copy any seasonal or holiday greeting from them. '
+    + 'No "happy new year", no "hope you had a good holiday", no "hope you are off to a great start to the year" '
+    + 'unless today\'s date genuinely fits. If you open with any seasonal note at all, it must match today\'s date; '
+    + 'otherwise open some other way.';
 
   const co  = contact.company  || 'their company';
   const ind = contact.industry || 'unknown';
@@ -2556,7 +2626,7 @@ async function generateEmail(contact) {
     '',
     'Requirements:',
     '- Tone: ' + tone,
-    '- Length: ' + maxLen + ' (not counting the article URL line)',
+    '- Length: ' + maxLen,
     '- Sound like a real person who actually read this article, not a template',
     '- Frame the article as something happening in their broader field/specialty, not necessarily at their firm — e.g. "saw this deal in the space and thought of you" or "this caught my eye given what you work on"',
     '- Connect it lightly to their specific role if natural',
@@ -2571,6 +2641,8 @@ async function generateEmail(contact) {
     '- Do not over-explain or be overly polished. A tiny bit of informality is good.',
     '- Write like you are messaging a peer you genuinely know, not drafting a press release.',
     '- Sign off: "' + signoff + ',\n' + myName + '"' + voiceBlock + styleBlock,
+    '',
+    dateBlock,
     '',
     subjectInstruction,
     '',
@@ -2593,7 +2665,7 @@ async function generateEmail(contact) {
   const clean = text.replace(/```json\n?|```/g,'').trim();
   const result = JSON.parse(clean);
   // Safety net: strip dashes the model may have slipped in
-  if (result.body)    result.body    = deDash(result.body);
+  if (result.body)    result.body    = deDashBody(result.body);
   if (result.subject) result.subject = deDash(result.subject);
   result._article = article;
   return result;
@@ -2619,6 +2691,21 @@ function deDash(s) {
   return out;
 }
 
+// Like deDash, but shields the URL inside a markdown link [text](url) so slugs
+// with hyphens or stray dashes in the address are never rewritten.
+function deDashBody(s) {
+  if (!s) return s;
+  // Protect the whole markdown link [text](url) from dedashing, clean the rest,
+  // then reinsert it verbatim. A sentinel (\u241f) marks each slot; it never
+  // appears in real email text, so it cannot collide with the body.
+  const links = [];
+  let out = s.replace(/\[[^\]]+\]\(https?:\/\/[^)\s]+\)/g, (m) => {
+    links.push(m);
+    return '\u241f' + (links.length - 1) + '\u241f';
+  });
+  out = deDash(out);
+  return out.replace(/\u241f(\d+)\u241f/g, (m, i) => links[+i]);
+}
 
 function fallbackEmail(c) {
   const myName = settings.name || '[Your name]';
@@ -2750,7 +2837,14 @@ function openDrawer(id) {
     c.context    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;grid-column:1/-1;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Notes</div><div style="font-size:13px;">${escapeHtml(c.context)}</div></div>` : '',
   ].filter(Boolean).join('');
 
+  updateDrawerPreview();
   document.getElementById('drawer').style.display = 'flex';
+}
+
+// Render the current body (with its inline article link) as it will actually send.
+function updateDrawerPreview() {
+  const el = document.getElementById('drawer-preview');
+  if (el) el.innerHTML = bodyToHtml(document.getElementById('drawer-body').value);
 }
 
 function closeDrawer(e) { if (e.target === document.getElementById('drawer')) closeDrawerDirect(); }
@@ -2766,7 +2860,7 @@ function closeDrawerDirect() {
 
 function copyDrawerEmail() {
   const subj = document.getElementById('drawer-subject').value;
-  const body = document.getElementById('drawer-body').value;
+  const body = bodyToPlain(document.getElementById('drawer-body').value);
   navigator.clipboard.writeText(`Subject: ${subj}\n\n${body}`).then(() => {
     const btn = event.target;
     btn.textContent = '✓ Copied'; setTimeout(()=>btn.textContent='Copy', 2000);
@@ -2776,7 +2870,7 @@ function copyDrawerEmail() {
 function openDrawerInGmail() {
   const c = contacts.find(x=>x.id===activeDrawerIdx);
   const subj = encodeURIComponent(document.getElementById('drawer-subject').value);
-  const body = encodeURIComponent(document.getElementById('drawer-body').value);
+  const body = encodeURIComponent(bodyToPlain(document.getElementById('drawer-body').value));
   const to = encodeURIComponent(c?.email||'');
   window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subj}&body=${body}`, '_blank');
 }
@@ -2788,7 +2882,7 @@ function openAllInGmail() {
     if (!result) return;
     const to = encodeURIComponent(c.email||'');
     const su = encodeURIComponent(result.subject||'');
-    const body = encodeURIComponent(result.body||'');
+    const body = encodeURIComponent(bodyToPlain(result.body||''));
     setTimeout(() => window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`, '_blank'), 300);
   });
 }
@@ -2829,7 +2923,7 @@ async function sendApproved() {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: c.email, subject: r.subject || '', body: r.body || '', toName: c.name, company: c.company })
+        body: JSON.stringify({ to: c.email, subject: r.subject || '', body: bodyToPlain(r.body || ''), html: wrapEmailHtml(bodyToHtml(r.body || '')), toName: c.name, company: c.company })
       });
       const data = await res.json();
       if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));

@@ -225,7 +225,7 @@ app.post('/api/claude', gateAI, hourlyLimit(50), async (req, res) => {
 // ── Send an email through the signed-in user's Gmail ──────────────
 app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
   try {
-    const { to, subject, body, toName, company } = req.body || {};
+    const { to, subject, body, html, toName, company } = req.body || {};
     if (!to || !subject || !body) {
       return res.status(400).json({ error: { message: 'Missing recipient, subject, or body.' } });
     }
@@ -236,7 +236,7 @@ app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
     const result = await googleHelper.sendEmail({
       refreshToken,
       fromEmail: req.session.user.email,
-      to, subject, body,
+      to, subject, body, html,
     });
     // Record it in the user's sent history (best-effort; don't fail the send if this errors).
     try {

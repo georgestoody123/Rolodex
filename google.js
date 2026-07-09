@@ -7,6 +7,7 @@
 //      through the Gmail API.
 
 const { google } = require('googleapis');
+const crypto = require('crypto');
 
 // What we ask each user to grant:
 //  - openid/email/profile: so we know who they are (this doubles as login)
@@ -60,26 +61,50 @@ async function exchangeCode(redirectUri, code) {
 }
 
 // Build a raw RFC-2822 email and base64url-encode it the way Gmail wants.
-// Body is base64-encoded so non-ASCII characters (accents, emoji) survive.
-function buildRawMessage({ fromEmail, to, subject, body }) {
+// Bodies are base64-encoded so non-ASCII characters (accents, emoji) survive.
+// If `html` is provided, we send a multipart/alternative message: a plain-text
+// part (fallback) plus an HTML part (so the article link is clickable inline).
+function buildRawMessage({ fromEmail, to, subject, body, html }) {
   const encodedSubject = /^[\x00-\x7F]*$/.test(subject)
     ? subject
     : '=?UTF-8?B?' + Buffer.from(subject, 'utf8').toString('base64') + '?=';
 
-  const b64Body = Buffer.from(body, 'utf8')
-    .toString('base64')
-    .replace(/(.{76})/g, '$1\r\n'); // wrap long lines per the spec
+  // base64-encode a string and wrap long lines per the spec
+  const b64 = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
 
-  const message = [
+  const headers = [
     `From: ${fromEmail}`,
     `To: ${to}`,
     `Subject: ${encodedSubject}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    b64Body,
-  ].join('\r\n');
+  ];
+
+  let message;
+  if (html) {
+    const boundary = 'bnd_' + crypto.randomBytes(16).toString('hex');
+    message = headers.concat([
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(body),
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(html),
+      `--${boundary}--`,
+    ]).join('\r\n');
+  } else {
+    message = headers.concat([
+      'Content-Type: text/plain; charset="UTF-8"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(body),
+    ]).join('\r\n');
+  }
 
   return Buffer.from(message)
     .toString('base64')
@@ -89,11 +114,11 @@ function buildRawMessage({ fromEmail, to, subject, body }) {
 }
 
 // Send one email as the given user, using their stored refresh token.
-async function sendEmail({ refreshToken, fromEmail, to, subject, body }) {
+async function sendEmail({ refreshToken, fromEmail, to, subject, body, html }) {
   const client = oauthClient(); // no redirect needed when refreshing
   client.setCredentials({ refresh_token: refreshToken });
   const gmail = google.gmail({ version: 'v1', auth: client });
-  const raw = buildRawMessage({ fromEmail, to, subject, body });
+  const raw = buildRawMessage({ fromEmail, to, subject, body, html });
   const res = await gmail.users.messages.send({
     userId: 'me',
     requestBody: { raw },
