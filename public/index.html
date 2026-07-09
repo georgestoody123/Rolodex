@@ -592,7 +592,12 @@
     <div class="drawer-header">
       <div id="drawer-avatar" class="avatar"></div>
       <h3 id="drawer-name"></h3>
-      <button class="btn btn-ghost btn-sm" onclick="closeDrawerDirect()">✕</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-sm" id="drawer-prev" onclick="navigateDrawer(-1)" title="Previous email (← key)">← Prev</button>
+        <span id="drawer-position" style="font-size:12px;color:var(--text-muted);min-width:78px;text-align:center;white-space:nowrap;"></span>
+        <button class="btn btn-sm" id="drawer-next" onclick="navigateDrawer(1)" title="Next email (→ key)">Next →</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeDrawerDirect()" title="Close (Esc)">✕</button>
+      </div>
     </div>
     <div class="drawer-body">
       <div id="drawer-meta" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
@@ -2856,6 +2861,7 @@ function openDrawer(id) {
   ].filter(Boolean).join('');
 
   updateDrawerPreview();
+  updateDrawerNav();
   document.getElementById('drawer').style.display = 'flex';
 }
 
@@ -2865,16 +2871,61 @@ function updateDrawerPreview() {
   if (el) el.innerHTML = bodyToHtml(document.getElementById('drawer-body').value);
 }
 
-function closeDrawer(e) { if (e.target === document.getElementById('drawer')) closeDrawerDirect(); }
-function closeDrawerDirect() {
-  // Save edits back
+// Persist the currently-open draft's edits back into emailResults.
+function saveDrawerEdits() {
   if (activeDrawerIdx !== null && emailResults[activeDrawerIdx]) {
     emailResults[activeDrawerIdx].subject = document.getElementById('drawer-subject').value;
     emailResults[activeDrawerIdx].body = document.getElementById('drawer-body').value;
   }
+}
+
+// The drafts that can be reviewed, in the same order as the queue.
+function reviewableDrawerIds() {
+  return contacts.filter(c => emailResults[c.id]).map(c => c.id);
+}
+
+// Step to the previous (-1) or next (+1) draft without closing the drawer.
+function navigateDrawer(dir) {
+  saveDrawerEdits();  // keep any edits before moving on
+  const ids = reviewableDrawerIds();
+  const cur = ids.indexOf(activeDrawerIdx);
+  if (cur === -1) return;
+  const target = cur + dir;
+  if (target < 0 || target >= ids.length) return;  // at an end (buttons are disabled anyway)
+  openDrawer(ids[target]);
+}
+
+// Refresh the "Email X of Y" label and enable/disable the prev/next buttons.
+function updateDrawerNav() {
+  const ids = reviewableDrawerIds();
+  const cur = ids.indexOf(activeDrawerIdx);
+  const label = document.getElementById('drawer-position');
+  const prev = document.getElementById('drawer-prev');
+  const next = document.getElementById('drawer-next');
+  if (label) label.textContent = (cur >= 0 && ids.length) ? ('Email ' + (cur + 1) + ' of ' + ids.length) : '';
+  if (prev) prev.disabled = cur <= 0;
+  if (next) next.disabled = cur === -1 || cur >= ids.length - 1;
+}
+
+function closeDrawer(e) { if (e.target === document.getElementById('drawer')) closeDrawerDirect(); }
+function closeDrawerDirect() {
+  saveDrawerEdits();
   document.getElementById('drawer').style.display = 'none';
   activeDrawerIdx = null;
 }
+
+// Keyboard shortcuts while the drawer is open: ← / → move between drafts,
+// Esc closes. Arrow keys are ignored while typing in a field so they still
+// move the text cursor normally.
+document.addEventListener('keydown', (e) => {
+  const drawer = document.getElementById('drawer');
+  if (!drawer || drawer.style.display !== 'flex') return;
+  if (e.key === 'Escape') { closeDrawerDirect(); return; }
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) || e.target.isContentEditable;
+  if (typing) return;
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); navigateDrawer(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); navigateDrawer(1); }
+});
 
 function copyDrawerEmail() {
   const subj = document.getElementById('drawer-subject').value;
