@@ -231,7 +231,8 @@ app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
     }
     const refreshToken = await db.getUserRefreshToken(req.session.user.sub);
     if (!refreshToken) {
-      return res.status(401).json({ error: { message: 'No Gmail authorization on file. Please sign in again.' } });
+      // No token stored — the frontend treats NEED_REAUTH as "offer to sign in again".
+      return res.status(401).json({ error: { message: 'NEED_REAUTH' } });
     }
     const result = await googleHelper.sendEmail({
       refreshToken,
@@ -247,7 +248,14 @@ app.post('/api/send', requireAuth, hourlyLimit(100), async (req, res) => {
     res.json({ ok: true, id: result.id });
   } catch (e) {
     console.error('Send failed:', e);
-    res.status(500).json({ error: { message: 'Failed to send: ' + (e.message || 'unknown error') } });
+    // An expired or revoked Google token surfaces here as "invalid_grant" (in
+    // testing mode the refresh token dies ~weekly). Tell the frontend to offer
+    // re-sign-in instead of showing a cryptic error.
+    const msg = e.message || '';
+    if (/invalid_grant|invalid_rapt|expired or revoked|invalid[ _]credentials|no refresh token/i.test(msg)) {
+      return res.status(401).json({ error: { message: 'NEED_REAUTH' } });
+    }
+    res.status(500).json({ error: { message: 'Failed to send: ' + (msg || 'unknown error') } });
   }
 });
 

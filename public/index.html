@@ -991,6 +991,19 @@ function renderAuth() {
 
 function signInWithGoogle() { window.location.href = '/auth/google'; }
 
+// The server returns NEED_REAUTH (401) when the Google token has expired or been
+// revoked — in the app's current "testing" mode this happens about once a week.
+function isReauthError(res, data) {
+  return res && res.status === 401 && !!data && !!data.error && data.error.message === 'NEED_REAUTH';
+}
+
+// Offer a one-click re-sign-in instead of showing a cryptic "invalid_grant".
+function promptReauth() {
+  if (confirm('Your Google sign-in has expired, so sending is paused. This happens about once a week while the app is in testing mode. Sign in again now to keep sending?')) {
+    signInWithGoogle();
+  }
+}
+
 async function signOut() {
   try { await fetch('/auth/logout', { method: 'POST' }); } catch(e) {}
   currentUser = null;
@@ -1037,6 +1050,11 @@ async function sendDrawerViaGmail() {
       body: JSON.stringify({ to: c.email, subject, body: bodyToPlain(body), html: wrapEmailHtml(bodyToHtml(body)), toName: c.name, company: c.company })
     });
     const data = await res.json();
+    if (isReauthError(res, data)) {
+      btn.disabled = false; btn.textContent = original;
+      promptReauth();
+      return;
+    }
     if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
     // Mark this contact as sent in the queue.
     if (emailResults[c.id]) emailResults[c.id]._sent = true;
@@ -2912,7 +2930,7 @@ async function sendApproved() {
   const prog = document.getElementById('bulk-progress');
   btn.disabled = true; openBtn.disabled = true;
 
-  let sent = 0, failed = 0;
+  let sent = 0, failed = 0, reauthNeeded = false;
   for (let i = 0; i < targets.length; i++) {
     const c = targets[i];
     const r = emailResults[c.id];
@@ -2926,6 +2944,13 @@ async function sendApproved() {
         body: JSON.stringify({ to: c.email, subject: r.subject || '', body: bodyToPlain(r.body || ''), html: wrapEmailHtml(bodyToHtml(r.body || '')), toName: c.name, company: c.company })
       });
       const data = await res.json();
+      if (isReauthError(res, data)) {
+        // Token expired — every remaining send would fail the same way. Stop the
+        // loop and offer re-sign-in once, leaving this row un-sent to retry after.
+        reauthNeeded = true;
+        if (statusEl) statusEl.innerHTML = `<span class="status-badge status-done">✓ Ready</span>`;
+        break;
+      }
       if (!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
       r._sent = true; sent++;
       if (statusEl) statusEl.innerHTML = `<span class="status-badge status-done">✓ Sent</span>`;
@@ -2939,9 +2964,15 @@ async function sendApproved() {
     await sleep(400);  // gentle pacing between sends
   }
 
-  prog.textContent = `Done: ${sent} sent${failed ? ', ' + failed + ' failed' : ''}.`;
   btn.disabled = false; openBtn.disabled = false;
   if (sent) loadHistory();  // refresh sent history + already-emailed markers
+  if (reauthNeeded) {
+    // Some may have gone out before the token expired; the rest stay approved to retry.
+    prog.textContent = `Paused: Google sign-in expired after ${sent} sent. Sign in again to finish the rest.`;
+    promptReauth();
+    return;
+  }
+  prog.textContent = `Done: ${sent} sent${failed ? ', ' + failed + ' failed' : ''}.`;
   if (failed) alert(`Sent ${sent}. ${failed} could not be sent — hover the red "Failed" badges to see why, then use "Review" to retry those individually.`);
 }
 
