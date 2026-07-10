@@ -679,24 +679,33 @@ async function fetchArticleForContact(contact) {
   const industry = (contact.industry || '').trim();
   const division = (contact.group    || '').trim();
   const position = (contact.title    || '').trim();
+  // Coverage group you actually discussed with them (e.g. "REGL"), plus the
+  // sector terms it maps to. This is the STRONGEST signal for what to search.
+  const coverage      = (contact.coverage      || '').trim();
+  const coverageFocus = (contact.coverageFocus || '').trim();
+  // Seed the search from the auto-detected focus terms, or, if the user typed
+  // the coverage label by hand, from the label itself.
+  const coverageSeed = coverageFocus || coverage;
 
   // Build a SECTOR-FIRST search query. The goal is articles relevant to the
   // person's field and specialty — deals, trends, market moves — NOT just news
-  // about their own employer. We combine industry + their role/specialty.
-  // The position often reveals the sub-specialty (e.g. "real estate debt",
-  // "equity derivatives", "oncology R&D") which is the most useful signal.
-  const specialty = [industry, division, position].filter(Boolean).join(' ');
-  const searchQuery = specialty
-    ? `${specialty} recent deals trends news 2026`
-    : `${company} industry news 2026`;
+  // about their own employer. A known coverage group leads, since it is the
+  // most specific thing we know they work on; otherwise fall back to
+  // industry + role/specialty.
+  const specialty = [coverageSeed, industry, division, position].filter(Boolean).join(' ');
+  const searchQuery = coverageSeed
+    ? `${coverageSeed} recent deals trends news 2026`
+    : specialty
+      ? `${specialty} recent deals trends news 2026`
+      : `${company} industry news 2026`;
 
   const searchPrompt = `Search the web for recent news about: "${searchQuery}".
 
 I'm writing to a professional whose work is:
 - Field / industry: ${industry || 'unknown'}
-- Role / specialty: ${position || 'unknown'}${division ? `\n- Division / focus area: ${division}` : ''}${company ? `\n- Employer (for context only — do NOT require the article to be about this company): ${company}` : ''}
+- Role / specialty: ${position || 'unknown'}${coverage ? `\n- Coverage group / desk (MOST IMPORTANT — prioritize articles about THIS sector): ${coverage}` : ''}${division ? `\n- Division / focus area: ${division}` : ''}${company ? `\n- Employer (for context only — do NOT require the article to be about this company): ${company}` : ''}
 
-Find ONE specific, real, recent article (published in 2025 or 2026) about a notable development in THEIR SECTOR OR SPECIALTY — not necessarily their own firm. Think about what someone in this exact role would discuss with a peer over coffee.
+Find ONE specific, real, recent article (published in 2025 or 2026) about a notable development in THEIR SECTOR OR SPECIALTY${coverage ? ` — especially their coverage group above (${coverage})` : ''} — not necessarily their own firm. Think about what someone in this exact role would discuss with a peer over coffee.
 
 Good examples of what to look for:
 - A recent notable deal, transaction, or fundraise in their specialty (e.g. for someone in real estate debt: a major CRE refinancing or distressed-debt sale)
@@ -1398,6 +1407,71 @@ async function learnStyleFromImport() {
   loadProfileFields();
 }
 
+// ── Coverage-group / department detection ─────────────────────────
+// When you write things like "keen to learn more about BofA REGL" or "your
+// coverage of consumer & retail", we capture the specific desk/coverage group
+// and attach it to that email's recipient. Later this steers the article search
+// (REGL -> real estate / gaming / lodging deals) and the email framing.
+// Each entry: display label + focus terms (the seed for the web search).
+// `needsContext: true` means the term is a common English word, so we only
+// count it when a coverage cue ("group", "desk", "learn more about"…) is nearby.
+const COVERAGE_GROUPS = [
+  { re: /\bREGL\b/i,                               label: 'REGL (Real Estate, Gaming & Lodging)', focus: 'real estate gaming lodging hotels REITs' },
+  { re: /\bTMT\b/i,                                label: 'TMT (Technology, Media & Telecom)',    focus: 'technology media telecom software' },
+  { re: /\bFIG\b/i,                                label: 'FIG (Financial Institutions Group)',   focus: 'banks insurers asset managers fintech financial institutions' },
+  { re: /\bEPU\b|\bpower (?:&|and) utilities\b/i,  label: 'Power & Utilities',                    focus: 'power utilities renewables energy transition' },
+  { re: /\bECM\b|\bequity capital markets\b/i,     label: 'ECM (Equity Capital Markets)',         focus: 'IPOs equity offerings equity capital markets' },
+  { re: /\bDCM\b|\bdebt capital markets\b/i,       label: 'DCM (Debt Capital Markets)',           focus: 'bond issuance debt capital markets credit' },
+  { re: /\blev(?:eraged)? ?fin(?:ance)?\b/i,       label: 'Leveraged Finance',                    focus: 'leveraged loans high yield leveraged finance' },
+  { re: /\bC&R\b|\bconsumer (?:&|and) retail\b/i,  label: 'Consumer & Retail',                    focus: 'consumer retail brands e-commerce' },
+  { re: /\bnatural resources\b|\bmetals (?:&|and) mining\b/i, label: 'Natural Resources',          focus: 'metals mining commodities natural resources' },
+  { re: /\bfinancial sponsors?\b|\bsponsors group\b/i, label: 'Financial Sponsors',               focus: 'private equity financial sponsors buyouts' },
+  { re: /\bequity research\b/i,                    label: 'Equity Research',                      focus: 'equity research analyst coverage earnings' },
+  { re: /\bsales (?:&|and) trading\b/i,            label: 'Sales & Trading',                      focus: 'markets sales trading' },
+  { re: /\bwealth management\b|\bprivate wealth\b/i, label: 'Wealth Management',                   focus: 'wealth management private banking' },
+  { re: /\basset management\b/i,                   label: 'Asset Management',                      focus: 'asset management funds flows' },
+  { re: /\bventure capital\b/i,                    label: 'Venture Capital',                      focus: 'venture capital startups funding rounds' },
+  { re: /\bprivate equity\b/i,                     label: 'Private Equity',                       focus: 'private equity buyouts LBOs' },
+  { re: /\bhedge funds?\b/i,                       label: 'Hedge Funds',                          focus: 'hedge funds' },
+  { re: /\brestructuring\b/i,                      label: 'Restructuring',                        focus: 'restructuring distressed debt bankruptcy' },
+  { re: /\bpublic finance\b|\bmunicipal bonds?\b/i, label: 'Public Finance',                      focus: 'municipal bonds public finance' },
+  { re: /\bmergers (?:&|and) acquisitions\b|\bM&A\b/i, label: 'M&A',                              focus: 'mergers acquisitions M&A deals', needsContext: true },
+  { re: /\breal estate\b|\bCRE\b|\bREITs?\b/i,     label: 'Real Estate',                          focus: 'commercial real estate CRE REITs property', needsContext: true },
+  { re: /\bhealthcare\b|\bhealth care\b/i,         label: 'Healthcare',                           focus: 'healthcare pharma biotech medical devices', needsContext: true },
+  { re: /\bindustrials?\b/i,                       label: 'Industrials',                          focus: 'industrials manufacturing aerospace defense', needsContext: true },
+  { re: /\benergy\b/i,                             label: 'Energy',                               focus: 'energy oil gas LNG', needsContext: true },
+  { re: /\bconsulting\b|\bstrategy consulting\b/i, label: 'Consulting',                           focus: 'management consulting strategy', needsContext: true },
+];
+// Cues that a nearby word is naming someone's group/desk (raises confidence).
+const COVERAGE_CONTEXT_RE = /\b(group|team|desk|coverage|cover(?:ing|s)?|vertical|practice|sector|division|learn more about|interested in|work(?:ing)? (?:in|on|with)|focus(?:ed)? on|your (?:work|role|world|space)|joining|analyst|associate|banker)\b/i;
+
+// Return the coverage groups mentioned in a piece of text, each with a weight
+// (2 when a coverage cue sits near the mention, else 1).
+function detectCoverageGroups(text) {
+  if (!text) return [];
+  const out = [];
+  for (const g of COVERAGE_GROUPS) {
+    const m = g.re.exec(text);
+    if (!m) continue;
+    const near = text.slice(Math.max(0, m.index - 45), m.index + m[0].length + 45);
+    const hasContext = COVERAGE_CONTEXT_RE.test(near);
+    if (g.needsContext && !hasContext) continue;  // common word used in passing — skip
+    out.push({ label: g.label, focus: g.focus, weight: hasContext ? 2 : 1 });
+  }
+  return out;
+}
+
+// Merge detected coverage hits into an aggregated recipient record.
+function addCoverageHits(rec, hits) {
+  if (!hits.length) return;
+  if (!rec.coverage) rec.coverage = {};
+  for (const h of hits) {
+    const cur = rec.coverage[h.label] || { focus: h.focus, weight: 0 };
+    cur.weight += h.weight;
+    rec.coverage[h.label] = cur;
+  }
+}
+
 // Process a single mbox message, aggregating recipients into byEmail
 function processMboxMessage(msg, byEmail) {
   if (!msg.trim()) return;
@@ -1418,6 +1492,8 @@ function processMboxMessage(msg, byEmail) {
   const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
   const thanked = isThankYouMessage(subject, bodySnippet);
+  // Coverage detection reads the original-case subject + body (acronyms matter).
+  const coverageHits = detectCoverageGroups(subject + ' ' + bodySnippet);
 
   // Style learning: only from mail I actually wrote. The From check guards
   // against a full-mailbox export that includes received mail.
@@ -1437,7 +1513,7 @@ function processMboxMessage(msg, byEmail) {
     if (isNoise(key)) continue;
     if (!byEmail[key]) {
       byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
-                       netHits: new Set(), bizHits: new Set(), thanked: 0 };
+                       netHits: new Set(), bizHits: new Set(), thanked: 0, coverage: {} };
     }
     const rec = byEmail[key];
     rec.count++;
@@ -1448,6 +1524,7 @@ function processMboxMessage(msg, byEmail) {
     if (subject && rec.subjects.length < 3) rec.subjects.push(subject.replace(/^(Re|Fwd):\s*/i, ''));
     netHits.forEach(h => rec.netHits.add(h));
     bizHits.forEach(h => rec.bizHits.add(h));
+    addCoverageHits(rec, coverageHits);
   }
 }
 
@@ -1464,6 +1541,7 @@ function processGmailMessage(msg, byEmail) {
   const netHits = matchesAny(scanText, NETWORKING_KEYWORDS);
   const bizHits = matchesAny(scanText, BUSINESS_KEYWORDS);
   const thanked = isThankYouMessage(subject, msg.body || '');
+  const coverageHits = detectCoverageGroups(subject + ' ' + (msg.body || ''));
 
   // Style learning: everything here came from the SENT label, so it's all mine
   if (shouldCollectStyle(thanked || netHits.length > 0 || bizHits.length > 0)) {
@@ -1477,7 +1555,7 @@ function processGmailMessage(msg, byEmail) {
     if (isNoise(key)) continue;
     if (!byEmail[key]) {
       byEmail[key] = { name: r.name || '', email: r.email, count: 0, lastDate: null, subjects: [],
-                       netHits: new Set(), bizHits: new Set(), thanked: 0 };
+                       netHits: new Set(), bizHits: new Set(), thanked: 0, coverage: {} };
     }
     const rec = byEmail[key];
     rec.count++;
@@ -1488,6 +1566,7 @@ function processGmailMessage(msg, byEmail) {
     if (subject && rec.subjects.length < 3) rec.subjects.push(subject.replace(/^(Re|Fwd):\s*/i, ''));
     netHits.forEach(h => rec.netHits.add(h));
     bizHits.forEach(h => rec.bizHits.add(h));
+    addCoverageHits(rec, coverageHits);
   }
 }
 
@@ -1580,15 +1659,24 @@ function finalizeMboxRows(byEmail) {
     // language, or discussed a business topic. This filters out non-business
     // contacts much more aggressively than before.
     const hasRealSignal = thanked || netHit || bizHit;
-    if (!hasRealSignal) score = 0;
+
+    // Strongest coverage group you discussed with this person (e.g. REGL).
+    const coverageEntries = Object.entries(rec.coverage || {})
+      .sort((a, b) => b[1].weight - a[1].weight);
+    const coverage = coverageEntries.length ? coverageEntries[0][0] : '';
+    const coverageFocus = coverageEntries.length ? coverageEntries[0][1].focus : '';
+    if (coverage) score += 1;  // naming a specific desk is a real business signal
+
+    if (!hasRealSignal && !coverage) score = 0;
 
     // Human-readable reasons for why this person was flagged as business-relevant
     const reasons = [];
     if (thanked)      reasons.push('thanked');
     if (netHit)       reasons.push('coffee chat');
     if (bizHit)       reasons.push('business topic');
-    if (hasRealSignal && hasBizDomain) reasons.push('work email');
-    if (hasRealSignal && rec.count >= 3) reasons.push(rec.count + '× emailed');
+    if (coverage)     reasons.push(coverage.split(' (')[0]);  // short label, e.g. "REGL"
+    if ((hasRealSignal || coverage) && hasBizDomain) reasons.push('work email');
+    if ((hasRealSignal || coverage) && rec.count >= 3) reasons.push(rec.count + '× emailed');
 
     return {
       firstName: first,
@@ -1598,6 +1686,8 @@ function finalizeMboxRows(byEmail) {
       title: '',
       industry: inferIndustry(company, [...rec.bizHits], rec.subjects),
       group: '',
+      coverage: coverage,             // display label, e.g. "REGL (Real Estate, Gaming & Lodging)"
+      coverageFocus: coverageFocus,   // search seed terms, e.g. "real estate gaming lodging…"
       connection: thanked ? 'Corresponded & thanked'
                  : (netHit ? 'Networking / coffee chat'
                  : (bizHit ? 'Business contact'
@@ -1605,7 +1695,8 @@ function finalizeMboxRows(byEmail) {
                  : (rec.count >= 2 ? 'Occasional contact' : 'Emailed once')))),
       context: 'You have emailed ' + rec.count + ' time' + (rec.count !== 1 ? 's' : '')
         + (rec.lastDate ? ', last on ' + rec.lastDate.toLocaleDateString() : '')
-        + (rec.subjects.length ? '. Recent subjects: ' + rec.subjects.join('; ') : ''),
+        + (rec.subjects.length ? '. Recent subjects: ' + rec.subjects.join('; ') : '')
+        + (coverage ? '. You discussed their coverage group: ' + coverage + '.' : ''),
       _count: rec.count,
       _lastDate: rec.lastDate ? rec.lastDate.getTime() : 0,
       _score: score,
@@ -1954,7 +2045,8 @@ function confirmMboxContacts() {
   const chosen = mboxRows.filter((r, i) => mboxInclude.has(i)).map(r => ({
     firstName: r.firstName, lastName: r.lastName, email: r.email,
     company: r.company, title: r.title, industry: r.industry,
-    group: r.group, connection: r.connection, context: r.context
+    group: r.group, connection: r.connection, context: r.context,
+    coverage: r.coverage, coverageFocus: r.coverageFocus
   }));
   if (!chosen.length) return;
   // Feed into the same contact pipeline the Excel path uses
@@ -1990,6 +2082,7 @@ function parseContacts(rows) {
       company:    findCol(row, ['company','employer','organization','org']),
       industry:   findCol(row, ['industry','sector','field','vertical']),
       group:      findCol(row, ['group','team','category','cohort']),
+      coverage:   findCol(row, ['coverage','desk','coveragegroup']),
       connection: findCol(row, ['connection','relationship','how','source']),
       context:    findCol(row, ['notes','context','details','info']),
     };
@@ -2253,6 +2346,11 @@ function saveContactNotes(id) {
   const c = allContacts.find(x => x.id === id);
   if (!c) return;
   c.connection = (document.getElementById('profile-connection-input').value || '').trim();
+  const cov = (document.getElementById('profile-coverage-input').value || '').trim();
+  // If the user changed the coverage label, drop the stale auto-detected search
+  // terms so the new label itself seeds the article search.
+  if (cov !== (c.coverage || '')) c.coverageFocus = '';
+  c.coverage = cov;
   c.context = (document.getElementById('profile-notes-input').value || '').trim();
   saveServerContacts();
   const saved = document.getElementById('profile-notes-saved');
@@ -2404,6 +2502,9 @@ function renderContactProfile(c) {
     +   '<h3 style="font-size:14px;margin-bottom:8px;">How you know them</h3>'
     +   '<label class="field-label">Connection</label>'
     +   '<input type="text" id="profile-connection-input" value="' + escapeHtml(c.connection || '') + '" placeholder="e.g. Met at the CREC panel; intro\'d by Sam" style="margin-bottom:10px;" />'
+    +   '<label class="field-label">Coverage group / desk</label>'
+    +   '<input type="text" id="profile-coverage-input" value="' + escapeHtml(c.coverage || '') + '" placeholder="e.g. REGL (Real Estate, Gaming & Lodging)" style="margin-bottom:4px;" />'
+    +   '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Auto-detected from your sent emails. Drives which articles the app pulls for their drafts.</div>'
     +   '<label class="field-label">Notes / how you know them</label>'
     +   '<textarea id="profile-notes-input" rows="4" placeholder="Anything worth remembering — where you met, what you talked about, follow-ups…">' + escapeHtml(c.context || '') + '</textarea>'
     +   '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px;">'
@@ -2579,6 +2680,7 @@ async function generateEmail(contact) {
     ? '\n\nIMPORTANT — match MY writing style. Below are real emails I have written. Mirror my greeting style, sentence length, level of formality, punctuation habits, and sign-off. Do not copy their content, only their voice:\n"""\n' + settings.styleExamples + '\n"""'
     : '';
   const groupNote      = contact.group      ? '\nDivision: '             + contact.group       : '';
+  const coverageNote   = contact.coverage   ? '\nCoverage group / desk they work on (you discussed this with them): ' + contact.coverage : '';
   const connectionNote = contact.connection ? '\nHow we know each other: '+ contact.connection : '';
   const contextNote    = contact.context    ? '\nNotes: '                 + contact.context    : '';
 
@@ -2650,7 +2752,7 @@ async function generateEmail(contact) {
     'Recipient:',
     '- Name: '     + contact.name,
     '- Position: ' + (contact.title || 'unknown role') + ' at ' + co,
-    '- Industry: ' + ind + groupNote + connectionNote + contextNote,
+    '- Industry: ' + ind + groupNote + coverageNote + connectionNote + contextNote,
     articleBlock,
     '',
     'Requirements:',
@@ -2658,7 +2760,9 @@ async function generateEmail(contact) {
     '- Length: ' + maxLen,
     '- Sound like a real person who actually read this article, not a template',
     '- Frame the article as something happening in their broader field/specialty, not necessarily at their firm — e.g. "saw this deal in the space and thought of you" or "this caught my eye given what you work on"',
-    '- Connect it lightly to their specific role if natural',
+    (contact.coverage
+      ? '- They work on ' + contact.coverage + ', which we talked about. Tie the article to THAT coverage area specifically, and it is natural to nod to it directly (e.g. "given your work on ' + contact.coverage.split(' (')[0] + '").'
+      : '- Connect it lightly to their specific role if natural'),
     '- Low-pressure call to action at the end',
     '',
     'SOUND HUMAN — this is critical. The email must read like a real person typed it quickly, not like AI:',
@@ -2895,6 +2999,7 @@ function openDrawer(id) {
   }
   document.getElementById('drawer-meta').innerHTML = [
     c.group      ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Group</div><div style="font-size:13px;font-weight:500;">${escapeHtml(c.group)}</div></div>` : '',
+    c.coverage   ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Coverage / desk</div><div style="font-size:13px;font-weight:500;">${escapeHtml(c.coverage)}</div></div>` : '',
     c.connection ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Connection</div><div style="font-size:13px;font-weight:500;">${escapeHtml(c.connection)}</div></div>` : '',
     c.context    ? `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;grid-column:1/-1;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Notes</div><div style="font-size:13px;">${escapeHtml(c.context)}</div></div>` : '',
   ].filter(Boolean).join('');
