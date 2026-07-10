@@ -12,39 +12,40 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0c0b08;
-    --surface: #15130d;
-    --surface-2: #1e1a10;
-    --border: rgba(198,166,92,0.16);
-    --border-strong: rgba(198,166,92,0.34);
-    --text: #f3ecda;
-    --text-muted: #9a9179;
-    --text-secondary: #c7bda3;
-    --accent: #c6a65c;
-    --accent-bg: rgba(198,166,92,0.10);
-    --accent-border: rgba(198,166,92,0.40);
-    --gold: #c6a65c;
-    --gold-bright: #e6cd86;
-    --gold-deep: #a2823b;
-    --success: #93ab84;
-    --success-bg: rgba(147,171,132,0.12);
-    --success-border: rgba(147,171,132,0.40);
-    --warning: #d9a441;
-    --warning-bg: rgba(217,164,65,0.12);
-    --danger: #cf6f5c;
-    --danger-bg: rgba(207,111,92,0.13);
+    /* Primary background: warm cream. Secondary palette: deep green + antique gold. */
+    --bg: #F4F0DB;
+    --surface: #FBF8EC;
+    --surface-2: #EBE5CB;
+    --border: rgba(26,80,71,0.20);
+    --border-strong: rgba(26,80,71,0.38);
+    --text: #1A5047;
+    --text-muted: #6E7A66;
+    --text-secondary: #2E5A50;
+    --accent: #B88E11;
+    --accent-bg: rgba(184,142,17,0.12);
+    --accent-border: rgba(184,142,17,0.42);
+    --gold: #B88E11;
+    --gold-bright: #8A6A0C;   /* deep enough to stay readable as text on cream */
+    --gold-deep: #6E540A;
+    --success: #2E7D5B;
+    --success-bg: rgba(46,125,91,0.13);
+    --success-border: rgba(46,125,91,0.40);
+    --warning: #B7791F;
+    --warning-bg: rgba(183,121,31,0.14);
+    --danger: #B5432E;
+    --danger-bg: rgba(181,67,46,0.12);
     --radius: 6px;
     --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh;
-    background-image: radial-gradient(circle at 12% -8%, rgba(198,166,92,0.07), transparent 42%), radial-gradient(circle at 100% 0%, rgba(198,166,92,0.05), transparent 38%); background-attachment: fixed; }
+    background-image: radial-gradient(circle at 12% -8%, rgba(26,80,71,0.06), transparent 42%), radial-gradient(circle at 100% 0%, rgba(184,142,17,0.06), transparent 40%); background-attachment: fixed; }
 
   /* ── Layout ── */
   .app { max-width: 980px; margin: 0 auto; padding: 1.5rem; }
 
   /* ── Header ── */
   .header { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
-  .logo { width: 46px; height: 46px; background: transparent; border: 1.5px solid var(--gold); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--gold-bright); font-family: var(--font-display); font-weight: 700; font-size: 25px; flex-shrink: 0; box-shadow: inset 0 0 14px rgba(198,166,92,0.18); }
+  .logo { width: 46px; height: 46px; background: transparent; border: 1.5px solid var(--gold); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--gold-bright); font-family: var(--font-display); font-weight: 700; font-size: 25px; flex-shrink: 0; box-shadow: inset 0 0 14px rgba(184,142,17,0.16); }
   .header h1 { font-family: var(--font-display); font-size: 27px; font-weight: 700; letter-spacing: 0.02em; }
   .header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; letter-spacing: 0.14em; text-transform: uppercase; }
   .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
@@ -89,7 +90,7 @@
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
 
   /* ── Upload zone ── */
-  .upload-zone { border: 2px dashed var(--border-strong); border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .upload-zone { border: 2px dashed var(--border-strong); border-radius: 0; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
   .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: var(--accent-bg); }
   .upload-icon { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; }
   .upload-zone h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
@@ -195,12 +196,16 @@
   /* Login / account tab */
   .login-card { max-width: 520px; margin: 1.5rem auto; text-align: center; padding: 2.75rem 2rem; }
   .login-card .crest { width: 66px; height: 66px; margin: 0 auto 1.1rem; border: 1.5px solid var(--gold); border-radius: 10px; display: flex; align-items: center; justify-content: center;
-    color: var(--gold-bright); font-family: var(--font-display); font-size: 34px; box-shadow: inset 0 0 18px rgba(198,166,92,0.20); }
+    color: var(--gold-bright); font-family: var(--font-display); font-size: 34px; box-shadow: inset 0 0 18px rgba(184,142,17,0.18); }
   .login-card h2 { font-family: var(--font-display); font-size: 23px; margin-bottom: 10px; }
   .login-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 1.25rem; }
   .gold-rule { height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 1.4rem 0; opacity: 0.5; }
   .btn-google { background: #fdfaf2; color: #1a1509; border-color: var(--gold-deep); font-weight: 600; padding: 10px 22px; }
   .btn-google:hover { background: #f0e7d0; }
+  /* Lighter-gold variant for the upload "Choose" buttons */
+  .btn-gold-light, .btn-gold-light:hover { color: #3a2f08; border-color: var(--gold); }
+  .btn-gold-light { background: linear-gradient(180deg, #E6C558, #C9A02A); }
+  .btn-gold-light:hover { background: linear-gradient(180deg, #EED079, #D4AB35); }
 
   /* ── Responsive ── */
   @media (max-width: 600px) {
@@ -221,13 +226,13 @@
       <p>Private networking · impeccably written</p>
     </div>
     <div class="header-right">
+      <button class="btn btn-sm hdr-link" id="hdr-login-btn" onclick="showTab('login')">Login</button>
       <button class="btn btn-sm hdr-link" id="hdr-profile-btn" onclick="showTab('profile')">Profile</button>
     </div>
   </div>
 
   <!-- Tab navigation -->
   <div class="tabs">
-    <button class="tab active" id="tab-btn-login" onclick="showTab('login')">Login</button>
     <button class="tab" id="tab-btn-contacts" onclick="showTab('contacts')">Contacts</button>
     <button class="tab" id="tab-btn-send" onclick="showTab('send')">Send</button>
     <button class="tab" id="tab-btn-history" onclick="showTab('history')">History</button>
@@ -267,7 +272,7 @@
         <div class="upload-eyebrow">Spreadsheet</div>
         <h2>Upload a contacts spreadsheet</h2>
         <p>Excel (.xlsx) or CSV with your contacts</p>
-        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose spreadsheet</button>
+        <button class="btn btn-primary btn-gold-light" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose spreadsheet</button>
         <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])" />
         <div style="margin-top:12px;"><a onclick="event.stopPropagation();downloadTemplate()" style="font-size:12px;cursor:pointer;border-bottom:1px solid var(--accent-border);">Download a starter Excel template</a></div>
       </div>
@@ -280,13 +285,9 @@
         <div class="upload-eyebrow">Sent email</div>
         <h2>Build from your sent email</h2>
         <p>Upload a Google Takeout .zip or .mbox of sent mail</p>
-        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('mbox-input').click()">Choose email export</button>
+        <button class="btn btn-primary btn-gold-light" onclick="event.stopPropagation();document.getElementById('mbox-input').click()">Choose email export</button>
         <input type="file" id="mbox-input" accept=".zip,.mbox" onchange="handleMboxFile(this.files[0])" />
       </div>
-    </div>
-
-    <div class="template-hint" style="max-width:none;">
-      <span><strong>Spreadsheet option:</strong> needs columns First Name, Last Name, Company, Position, Industry, Group, Connection, Notes (use "Download a starter Excel template" above). &nbsp; <strong>Email option:</strong> in Google Takeout, export Gmail, which gives a .zip containing a "Sent.mbox" file. Drop that whole .zip here. Everything is read on your computer, nothing is uploaded.</span>
     </div>
 
     <div id="mbox-progress" style="display:none;margin-top:1rem;" class="card">
@@ -956,7 +957,10 @@ function showTab(name) {
     if (panel) panel.classList.toggle('active', t === name);
     if (btn) btn.classList.toggle('active', t === name);
   });
-  // Profile lives in the top-right, not the tab row — reflect its active state there.
+  // Login and Profile live in the header (top-right), not the tab row —
+  // reflect their active state there.
+  const hdrLogin = document.getElementById('hdr-login-btn');
+  if (hdrLogin) hdrLogin.classList.toggle('hdr-link-active', name === 'login');
   const hdrProfile = document.getElementById('hdr-profile-btn');
   if (hdrProfile) hdrProfile.classList.toggle('hdr-link-active', name === 'profile');
   if (name === 'profile') loadProfileFields();
