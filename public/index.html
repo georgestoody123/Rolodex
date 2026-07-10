@@ -2975,12 +2975,25 @@ function copyDrawerEmail() {
   });
 }
 
+// Build a Gmail compose deep-link. When signed in, target the linked Google
+// account via the /u/<email>/ path so the compose window opens in THAT Gmail,
+// even when the browser's default Google account is a different one.
+function gmailComposeUrl(toEnc, subjEnc, bodyEnc) {
+  // Keep the "@" literal (Gmail's canonical /u/<email>/ form) but still escape
+  // anything else unusual in the address.
+  const acct = (currentUser && currentUser.email)
+    ? 'u/' + encodeURIComponent(currentUser.email).replace(/%40/g, '@') + '/'
+    : '';
+  return 'https://mail.google.com/mail/' + acct
+    + '?view=cm&fs=1&to=' + toEnc + '&su=' + subjEnc + '&body=' + bodyEnc;
+}
+
 function openDrawerInGmail() {
   const c = contacts.find(x=>x.id===activeDrawerIdx);
   const subj = encodeURIComponent(document.getElementById('drawer-subject').value);
   const body = encodeURIComponent(bodyToPlain(document.getElementById('drawer-body').value));
   const to = encodeURIComponent(c?.email||'');
-  window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subj}&body=${body}`, '_blank');
+  window.open(gmailComposeUrl(to, subj, body), '_blank');
 }
 
 function openAllInGmail() {
@@ -2991,7 +3004,7 @@ function openAllInGmail() {
     const to = encodeURIComponent(c.email||'');
     const su = encodeURIComponent(result.subject||'');
     const body = encodeURIComponent(bodyToPlain(result.body||''));
-    setTimeout(() => window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`, '_blank'), 300);
+    setTimeout(() => window.open(gmailComposeUrl(to, su, body), '_blank'), 300);
   });
 }
 
